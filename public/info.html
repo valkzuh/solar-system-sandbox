@@ -1,0 +1,188 @@
+﻿<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Black Hole Visualizer | Physics Notes</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="info-page">
+      <div class="info-card">
+        <h1>Black Hole Visualizer</h1>
+        <p>
+          This visualizer uses a real-time GPU ray-marcher with Kerr-inspired light bending and
+          radiative transfer, plus a Rust backend that computes Kerr metrics. The visuals are
+          physically motivated (spectral emission, Doppler/gravitational shifts, optical depth),
+          while derived values (horizon, ISCO, photon orbits, shadow boundary) use standard formulas
+          for a rotating black hole.
+        </p>
+
+        <h2>Units And Constants</h2>
+        <ul>
+          <li>Mass input is in solar masses (Msun).</li>
+          <li>Spin parameter is dimensionless: a* = Jc / (GM^2).</li>
+          <li>Lengths are measured in meters internally and displayed in km / AU.</li>
+        </ul>
+        <pre><code>G = 6.6743e-11 m^3 kg^-1 s^-2
+c = 299,792,458 m/s
+Msun = 1.98847e30 kg</code></pre>
+
+        <h2>Gravitational Radius</h2>
+        <p>
+          The gravitational radius sets the unit scale for Kerr geometry.
+        </p>
+        <pre><code>rg = GM / c^2
+rs = 2rg  (Schwarzschild radius)</code></pre>
+
+        <h2>Event Horizon (Kerr)</h2>
+        <p>
+          The Kerr outer event horizon radius is
+        </p>
+        <pre><code>r+ = rg * (1 + sqrt(1 - a*^2))</code></pre>
+        <p>
+          Spin is clamped to 0.998 to avoid numerical instability near extremality.
+        </p>
+
+        <h2>ISCO (Innermost Stable Circular Orbit)</h2>
+        <p>
+          We use the standard Kerr ISCO formula, which differs for prograde and retrograde disks.
+        </p>
+        <pre><code>Z1 = 1 + (1 - a*^2)^(1/3) * ((1 + a*)^(1/3) + (1 - a*)^(1/3))
+Z2 = sqrt(3a*^2 + Z1^2)
+
+r_ISCO(prograde) = rg * (3 + Z2 - sqrt((3 - Z1)(3 + Z1 + 2Z2)))
+r_ISCO(retrograde) = rg * (3 + Z2 + sqrt((3 - Z1)(3 + Z1 + 2Z2)))</code></pre>
+        <p>
+          The disk inner edge in the renderer is tied to r_ISCO, scaled by the UI “Inner (x ISCO)” factor.
+        </p>
+
+        <h2>Photon Orbits</h2>
+        <p>
+          Equatorial circular photon orbit radii in Kerr spacetime:
+        </p>
+        <pre><code>r_ph(prograde) = 2rg * (1 + cos((2/3) * arccos(-a*)))
+r_ph(retrograde) = 2rg * (1 + cos((2/3) * arccos(a*)))</code></pre>
+
+        <h2>Black Hole Shadow Boundary</h2>
+        <p>
+          For an observer at infinity with inclination angle theta, the apparent shadow is computed
+          from constants of motion (xi, eta) of spherical photon orbits. The screen coordinates are:
+        </p>
+        <pre><code>alpha = -xi / sin(theta)
+beta  = sqrt(eta + a*^2 cos^2(theta) - xi^2 cot^2(theta))</code></pre>
+        <p>
+          We sweep through the photon region to generate a closed curve. When a* is near zero, the
+          shadow becomes a circle of radius sqrt(27) rg.
+        </p>
+
+        <h2>Ray-Traced Light Bending (Approximate)</h2>
+        <p>
+          Each pixel integrates a null ray through a Kerr-inspired field. We use a GR-motivated
+          deflection term (2M / r^3) and a frame-dragging term that rotates the ray around the
+          spin axis. This is a fast approximation to full Kerr geodesics, but it reproduces the
+          correct qualitative bending and spin-driven asymmetry.
+        </p>
+        <pre><code>d^2x/dλ^2 ≈ -2M * r / |r|^3  +  Ω_frame × v
+Ω_frame ∝ a M / r^3</code></pre>
+        <p>
+          The final ray direction is then used to sample the background sky, so stars are lensed
+          by the same bending the disk experiences.
+        </p>
+
+        <h2>Radiative Transfer + Spectral Rendering</h2>
+        <p>
+          The disk is modeled as a thin, optically active slab. Along each ray we solve a simple
+          emission/absorption update:
+        </p>
+        <pre><code>I_out = I_in * exp(-τ) + S * (1 - exp(-τ))
+τ = ∫ α ds</code></pre>
+        <p>
+          Emission is sampled from a Planck spectrum using three wavelengths (R/G/B) and shifted by
+          the combined Doppler + gravitational redshift factor g. This gives a physically motivated
+          color shift and brightness beaming across the disk.
+        </p>
+        <pre><code>g = sqrt(1 - rs / r) / (gamma * (1 - beta cos(theta)))
+Omega = 1 / (r^(3/2) ± a)</code></pre>
+
+        <h2>Spacetime Grid</h2>
+        <p>
+          The grid is a visual aid that shows the same lensing warp applied to a set of
+          orthogonal lines. Near the photon region the lines bend strongly and may break
+          inside the shadow boundary.
+        </p>
+
+        <h2>Eddington Luminosity</h2>
+        <p>
+          The Eddington luminosity is provided for scale:
+        </p>
+        <pre><code>L_edd = 1.26e31 W * (M / Msun)</code></pre>
+
+        <h2>ISCO Orbital Period</h2>
+        <p>
+          For interpretability we report a Newtonian orbital period at r_ISCO:
+        </p>
+        <pre><code>T = 2 pi * sqrt(r_ISCO^3 / (GM))</code></pre>
+        <p>
+          This is not a full relativistic orbital period; it is a useful timescale reference.
+        </p>
+
+        <h2>Accretion Disk Model</h2>
+        <p>
+          We use a Shakura–Sunyaev-inspired temperature profile with mass and accretion scaling, then
+          apply Doppler/gravitational shifts to the emitted spectrum:
+        </p>
+        <pre><code>T(r) ∝ [ (1 - sqrt(r_in / r)) / r^3 ]^(1/4)
+T_obs = g * T_em</code></pre>
+        <p>
+          Disk thickness controls the vertical density profile, which sets optical depth and
+          self-shadowing. A mild limb-darkening term dims grazing angles.
+        </p>
+
+        <h2>Jets And Beaming</h2>
+        <p>
+          Jet brightness is scaled by a combination of spin, accretion, and the “Jet power” control.
+          This is a stylized proxy for Blandford–Znajek-like behavior, not a full magnetohydrodynamic model.
+        </p>
+
+        <h2>Pulsar Mode</h2>
+        <p>
+          Pulsars are neutron stars, not black holes. The pulsar preset swaps the black hole core for
+          a magnetized star with sweeping beams. We include weak-field light bending around the
+          compact star and a lighthouse beam model.
+        </p>
+        <pre><code>alpha ≈ 2 rs / b   (weak-field deflection)
+m(t) = R_spin(Ω t) · m0
+I_beam ∝ exp(-theta^2 / 2σ^2)</code></pre>
+
+        <h2>Backend API</h2>
+        <p>
+          The frontend queries the local Rust server for physics metrics.
+        </p>
+        <pre><code>GET /api/metrics?mass=10&amp;spin=0.6&amp;inclination=35&amp;disk_sense=prograde</code></pre>
+        <p>Response fields:</p>
+        <ul>
+          <li>rg_m, rs_m, r_plus_m: gravitational, Schwarzschild, and horizon radii</li>
+          <li>isco_m: ISCO radius</li>
+          <li>photon_pro_m, photon_retro_m: photon orbit radii</li>
+          <li>shadow_radius_rg: shadow radius in units of rg</li>
+          <li>shadow_path: list of {x,y} points in units of rg</li>
+          <li>eddington_w, isco_period_s: luminosity and orbital period</li>
+        </ul>
+
+        <h2>Limitations</h2>
+        <ul>
+          <li>Kerr geodesics are approximated for real-time speed.</li>
+          <li>No full GRMHD, polarization, or plasma radiative transfer.</li>
+          <li>ISCO period is Newtonian for simplicity.</li>
+          <li>Disk turbulence is procedural, not MHD.</li>
+        </ul>
+
+        <p><a href="/">Back to visualizer</a></p>
+      </div>
+    </div>
+  </body>
+</html>
