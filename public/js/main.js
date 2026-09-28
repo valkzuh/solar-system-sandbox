@@ -7,6 +7,7 @@ import { installEventHandlers } from './sim/events.js';
 import { Renderer } from './render/renderer.js';
 import { Labels } from './render/labels.js';
 import { MeterPass } from './render/meter.js';
+import { Supernova } from './render/effects.js';
 import { CameraController } from './camera.js';
 import { SCENARIOS, SCENARIO_BY_ID } from './data/scenarios.js';
 import { UI } from './ui/ui.js';
@@ -40,6 +41,7 @@ class App {
     this.scenarioId = null;
     this.placing = null; // template id when placing
     this.snapExposure = 0;
+    this.effects = [];
   }
 
   async start() {
@@ -83,6 +85,7 @@ class App {
     this.renderer.orbits.clearTrails();
     this.renderer.comets.clear();
     this.labels.clear();
+    this.effects = [];
     this.select(null);
     const opts = sc.build(this, date) || {};
     this.scenarioId = id;
@@ -122,6 +125,21 @@ class App {
     this.select(focus && !focus.isStar ? focus : null);
     this.snapExposure = 12;
     this.ui?.refreshAll();
+  }
+
+  addEffect(spec) {
+    if (spec.kind === 'supernova') this.effects.push(new Supernova(spec));
+  }
+
+  // Every light source: luminous bodies plus transient effects. { pos, luminosityW, temperature }
+  lightSources() {
+    const out = [];
+    for (const b of this.sim.bodies) if (b.isLuminous) out.push({ pos: b.pos, lum: b.star.luminosity, body: b });
+    for (const e of this.effects) {
+      const L = e.luminosity(this.sim.time);
+      if (L > 0) out.push({ pos: e.center(this.sim.time), lum: L, body: null });
+    }
+    return out;
   }
 
   mainStar() {
@@ -182,13 +200,13 @@ class App {
 
   // ------------------------------------------------------------------ physics helpers
   updateTemperatures(dtSim) {
-    const stars = this.sim.bodies.filter((b) => b.isLuminous);
+    const stars = this.lightSources();
     for (const b of this.sim.bodies) {
       if (b.isStar || b.kind === 'blackhole') continue;
       let t4 = 0;
       for (const s of stars) {
         const d = Math.hypot(b.pos[0] - s.pos[0], b.pos[1] - s.pos[1], b.pos[2] - s.pos[2]);
-        const t = equilibriumTemperatureK(s.luminosityW, d, b.albedo);
+        const t = equilibriumTemperatureK(s.lum * 3.828e26, d, b.albedo);
         t4 += t ** 4;
       }
       const teq = Math.pow(t4, 0.25);
@@ -212,12 +230,12 @@ class App {
   computeExposure(dt) {
     let phys = 1;
     const f = this.camera.focus;
-    const stars = this.sim.bodies.filter((b) => b.isLuminous);
+    const stars = this.lightSources();
     if (f && !f.isLuminous && stars.length) {
       let E = 0;
       for (const s of stars) {
         const d2 = (f.pos[0] - s.pos[0]) ** 2 + (f.pos[1] - s.pos[1]) ** 2 + (f.pos[2] - s.pos[2]) ** 2;
-        E += (s.star.luminosity * AU * AU) / d2;
+        E += (s.lum * AU * AU) / Math.max(d2, 1);
       }
       const alb = Math.max(f.geoAlbedo || 0.3, 0.05);
       phys = Math.min(Math.max(0.55 / Math.max(E * Math.pow(alb, 0.6), 1e-9), 0.02), 3e5);
@@ -339,7 +357,9 @@ class App {
       selected: this.selected,
       camDist,
       near,
+      effects: this.effects,
     });
+    this.effects = this.effects.filter((e) => !e.done(this.sim.time));
     this.labels.update(this.sim.bodies, this.renderer.camera, this.camera.camPos, {
       pixelAngle: this.camera.fovY / (this.renderer.height * this.renderer.pixelRatio),
       pixelRatio: this.renderer.pixelRatio,

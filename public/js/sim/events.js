@@ -239,14 +239,16 @@ export function tidalDisruption(sim, body, by, app) {
 }
 
 export function supernova(sim, star, app) {
-  // Core collapse: most of the envelope is ejected as a fast shell; remnant is a neutron
-  // star (< ~20 Msun progenitor) or a black hole.
+  // Core collapse: the envelope is blown off at ~8,000 km/s (an expanding fireball, later a
+  // nebula - rendered as an effect rather than as N-body particles); the core becomes a
+  // neutron star (progenitor < ~20 M_sun) or a black hole. The sudden mass loss can unbind
+  // the planets.
   const pos = Array.from(star.pos);
   const vel = star.vel;
   const mSun = star.mass / MSUN;
   const remnantKind = mSun > 20 ? 'blackhole' : 'neutron';
   const remnantMass = (remnantKind === 'blackhole' ? Math.max(3, mSun * 0.25) : 1.4) * MSUN;
-  const ejecta = star.mass - remnantMass;
+  const progenitor = star.name;
   star.kind = remnantKind;
   star.mass = remnantMass;
   if (remnantKind === 'neutron') {
@@ -257,9 +259,15 @@ export function supernova(sim, star, app) {
     star.updateStellarFromMass();
   }
   star.appearance = null;
-  star.name = `${star.name} remnant`;
+  star.atmosphere = null;
+  star.rings = null;
+  star.j2 = 0;
+  star.name = `${progenitor} remnant`;
+  star.info = remnantKind === 'blackhole'
+    ? `Black hole left by the core collapse of ${progenitor} (${mSun.toFixed(1)} M☉ progenitor).`
+    : `Neutron star left by the core collapse of ${progenitor} (${mSun.toFixed(1)} M☉ progenitor).`;
   sim.setState(star, pos, vel);
-  spawnDebris(sim, star, ejecta, pos, vel, 8000, 300, 'supernova');
+  app?.addEffect?.({ kind: 'supernova', body: star, pos, vel, t0: sim.time, speed: 8000, peak: 1e9 * Math.min(3, mSun / 15) });
   app?.onBodyChanged?.(star);
-  app?.onEvent?.({ type: 'supernova', a: star.name, pos, time: sim.time, outcome: `collapsed to a ${remnantKind === 'blackhole' ? 'black hole' : 'neutron star'}` });
+  app?.onEvent?.({ type: 'supernova', a: progenitor, pos, time: sim.time, outcome: `core collapse — ${(mSun - remnantMass / MSUN).toFixed(1)} M☉ ejected at 8,000 km/s, leaving a ${remnantKind === 'blackhole' ? 'black hole' : 'neutron star'}` });
 }

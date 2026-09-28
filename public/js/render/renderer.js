@@ -17,6 +17,7 @@ import { LensingShader, MAX_LENSES } from './lensing.js';
 import { MeterPass } from './meter.js';
 import { DebrisRenderer } from './debris.js';
 import { Zones } from './zones.js';
+import { EffectsRenderer } from './effects.js';
 import { balancedBlackbody, thermalGlow, blackbodyRGB, starSurfaceRadiance } from '../core/stellar.js';
 import { eclToRender } from '../core/vec.js';
 import { AU, RSUN } from '../core/constants.js';
@@ -58,6 +59,7 @@ export class Renderer {
     this.comets = new CometTails(this.scene);
     this.debris = new DebrisRenderer(this.scene);
     this.zones = new Zones(this.overlay);
+    this.effects = new EffectsRenderer(this.scene);
     this.visuals = new Map();
     this.settings = {
       quality: 'medium',
@@ -186,6 +188,16 @@ export class Renderer {
       }
     }
 
+    // Transient light sources (supernova fireballs) illuminate everything like stars.
+    for (const e of frame.effects || []) {
+      const L = e.luminosity(frame.simTime);
+      if (!(L > 0)) continue;
+      const c = e.center(frame.simTime);
+      const T = e.temperature(frame.simTime);
+      const pseudo = { pos: c, radius: e.radius(frame.simTime), star: { luminosity: L, temperature: T }, isStar: true, kind: 'effect' };
+      stars.push({ body: pseudo, rp: eclToRender([c[0] - camPos[0], c[1] - camPos[1], c[2] - camPos[2]]), lum: L, color: balancedBlackbody(T) });
+    }
+
     this.points.begin();
     const frustum = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
     const ctx = { pixelAngle, pixelRatio: this.pixelRatio, exposure, camDist: frame.camDist, focusBody: frame.focusBody, selected: frame.selected, heightPx };
@@ -276,11 +288,13 @@ export class Renderer {
     this.sky.update({ pixelRatio: this.pixelRatio, fovY: frame.fovY, height: heightPx, glareDim });
     this.points.end();
     this.orbits.update(bodies, camPos, ctx);
-    const mainStar = stars.length ? stars.reduce((a, s) => (s.body.mass > a.body.mass ? s : a)).body : null;
+    const realStars = stars.filter((s) => s.body.kind !== 'effect');
+    const mainStar = realStars.length ? realStars.reduce((a, s) => (s.body.mass > a.body.mass ? s : a)).body : null;
     this.belts.update(mainStar, camPos, sim.time, ctx);
     this.comets.update(camPos, ctx);
     this.debris.update(bodies, camPos, mainStar, ctx, frame.simTime);
     this.zones.update(frame.selected, camPos);
+    this.effects.update(frame.effects || [], camPos, frame.simTime, ctx);
 
     // Post-processing configuration.
     this.lensPass.enabled = this.settings.lensing && this.lenses.length > 0;
