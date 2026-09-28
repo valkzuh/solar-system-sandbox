@@ -75,22 +75,24 @@ vec3 hash33(vec3 p) {
   return fract((p.xxy + p.yxx) * p.zyx);
 }
 
-// Crater field: returns height contribution (bowl + raised rim) from a jittered cell grid.
+// Crater field: height contribution (bowl + raised rim) from a jittered cell grid. Crater
+// radius is bounded (<= 0.35 cell) so only the 2x2x2 nearest cells need checking.
 float craters(vec3 p, float density) {
   vec3 cell = floor(p);
   vec3 f = fract(p);
+  vec3 dirv = step(0.5, f) * 2.0 - 1.0; // toward the nearer neighbours
   float h = 0.0;
-  for (int k = 0; k < 27; k++) {
-    vec3 o = vec3(float(k % 3), float((k / 3) % 3), float(k / 9)) - 1.0;
+  for (int k = 0; k < 8; k++) {
+    vec3 o = vec3(float(k & 1), float((k >> 1) & 1), float(k >> 2)) * dirv;
     vec3 rnd = hash33(cell + o);
     if (rnd.z > density) continue;
-    vec3 c = o + rnd * 0.8 + 0.1;
-    float r = 0.15 + 0.35 * fract(rnd.x * 7.13);
+    vec3 c = o + 0.25 + rnd * 0.5;
+    float r = 0.1 + 0.25 * fract(rnd.x * 7.13);
     float d = length(f - c) / r;
     if (d < 1.6) {
       float bowl = d < 1.0 ? (d * d - 1.0) : 0.0;
       float rim = exp(-pow((d - 1.0) * 4.0, 2.0)) * 0.35;
-      h += (bowl * 0.6 + rim) * r;
+      h += (bowl * 0.6 + rim) * r * 1.6;
     }
   }
   return h;

@@ -30,6 +30,7 @@ export class CameraController {
     this.pointers = new Map();
     this.minDistanceFn = () => 1e-3;
     this.bodyScale = 1;
+    this.autoTilt = true;
     this._bind();
   }
 
@@ -137,6 +138,19 @@ export class CameraController {
     this.camPos = [center[0] + offEcl[0], center[1] + offEcl[1], center[2] + offEcl[2]];
     const m = new THREE.Matrix4().lookAt(off, new THREE.Vector3(0, 0, 0), UP);
     this.quat.setFromRotationMatrix(m);
+    // Near a surface, pitch the view up toward the horizon (like an aircraft or the ISS
+    // window) instead of staring straight down at the planet's centre.
+    const f = this.focus;
+    if (f && f.sim && this.autoTilt) {
+      const R = (f.isStar || f.kind === 'blackhole' ? f.radius : f.radius * this.bodyScale);
+      const alt = dist - R;
+      const k = 1 - THREE.MathUtils.smoothstep(alt / R, 0.03, 0.9);
+      if (k > 0) {
+        const horizon = Math.asin(Math.min(1, R / dist)); // angle from nadir to horizon
+        const pitch = k * Math.max(0, horizon - this.fovY * 0.3);
+        this.quat.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitch));
+      }
+    }
     this.center = center;
   }
 

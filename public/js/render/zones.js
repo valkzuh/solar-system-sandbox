@@ -80,7 +80,7 @@ export class Zones {
     this.roche = this.mk(0xff6b6b);
     this.roche.material.uniforms.uOpacity.value = 0.1;
     this.hill = this.mk(0x4aa3ff);
-    this.enabled = true;
+    this.enabled = false;
   }
 
   _place(mesh, center, camPos, inner, outer, normal) {

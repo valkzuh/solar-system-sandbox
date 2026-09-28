@@ -26,7 +26,7 @@ export const PROC = {
 
 export const ATMOSPHERES = {
   earth: { height: 100, rayleigh: [5.802e-3, 13.558e-3, 33.1e-3], rayleighH: 8.0, mie: 3.996e-3, mieH: 1.2, mieG: 0.8, mieColor: [1, 1, 1], absorb: [0.65e-3, 1.881e-3, 0.085e-3], absorbH: 25 },
-  mars: { height: 80, rayleigh: [0.19e-3, 0.1e-3, 0.058e-3], rayleighH: 11.1, mie: 0.03, mieH: 11.1, mieG: 0.65, mieColor: [1.0, 0.62, 0.38], absorb: [0, 0, 0], absorbH: 10 },
+  mars: { height: 80, rayleigh: [0.19e-3, 0.1e-3, 0.058e-3], rayleighH: 11.1, mie: 0.008, mieH: 11.1, mieG: 0.65, mieColor: [1.0, 0.62, 0.38], absorb: [0, 0, 0], absorbH: 10 },
   venus: { height: 250, rayleigh: [0.9e-3, 0.62e-3, 0.3e-3], rayleighH: 15.9, mie: 0.9e-3, mieH: 22, mieG: 0.7, mieColor: [1.0, 0.86, 0.62], absorb: [0, 0.02e-3, 0.08e-3], absorbH: 20 },
   titan: { height: 600, rayleigh: [0.12e-3, 0.06e-3, 0.02e-3], rayleighH: 40, mie: 0.06, mieH: 55, mieG: 0.6, mieColor: [1.0, 0.6, 0.25], absorb: [0.0, 0.03e-3, 0.09e-3], absorbH: 60 },
   jupiter: { height: 600, rayleigh: [0.02e-3, 0.035e-3, 0.08e-3], rayleighH: 27, mie: 0.02e-3, mieH: 27, mieG: 0.7, mieColor: [1.0, 0.9, 0.8], absorb: [0, 0, 0], absorbH: 27 },
@@ -58,7 +58,7 @@ export const SOLAR_SYSTEM = [
   {
     id: 'mercury', name: 'Mercury', kind: 'planet', parent: 'sun', gm: 22031.868551, radius: 2439.4,
     albedo: 0.088, geoAlbedo: 0.142, greenhouse: 0, ephem: 'astronomy', iau: 'Mercury', rotation: { iau: 'Mercury' },
-    appearance: { map: T('mercurymap.jpg'), bump: T('mercurybump.jpg'), bumpScale: 1.2, lonOffset: 0.0, proc: { type: PROC.ROCKY, seed: 11, craters: 0.35, detail: 0.6 } },
+    appearance: { map: T('mercurymap.jpg'), bump: T('mercurybump.jpg'), bumpScale: 1.2, lonOffset: 0.0, proc: { type: PROC.ROCKY, seed: 11, craters: 0.35, detail: 0.6, detailOnly: true } },
     info: 'Smallest planet; 3:2 spin-orbit resonance, 430 °C days and −180 °C nights.',
   },
   {
@@ -78,14 +78,14 @@ export const SOLAR_SYSTEM = [
   {
     id: 'moon', j2: 0.0002033, j2Radius: 1738.0, name: 'Moon', kind: 'moon', parent: 'earth', gm: 4902.800066, radius: 1737.4,
     albedo: 0.11, geoAlbedo: 0.12, greenhouse: 0, ephem: 'moon', iau: 'Moon', rotation: { iau: 'Moon' },
-    appearance: { map: T('moon_1k.jpg'), bump: T('moonbump1k.jpg'), bumpScale: 1.0, proc: { type: PROC.ROCKY, seed: 31, craters: 0.25, detail: 0.5 } },
+    appearance: { map: T('moon_1k.jpg'), bump: T('moonbump1k.jpg'), bumpScale: 1.0, proc: { type: PROC.ROCKY, seed: 31, craters: 0.25, detail: 0.5, detailOnly: true } },
     info: 'Tidally locked; stabilises Earth’s axial tilt. Formed ~4.5 Gyr ago in a giant impact.',
   },
   {
     id: 'mars', j2: 0.00195545, j2Radius: 3396.19, name: 'Mars', kind: 'planet', parent: 'sun', gm: 42828.375214, radius: 3389.5, flattening: 0.00589,
     albedo: 0.25, geoAlbedo: 0.17, greenhouse: 5, ephem: 'astronomy', iau: 'Mars', rotation: { iau: 'Mars' },
     atmosphere: 'mars',
-    appearance: { map: T('mars_1k_color.jpg'), bump: T('mars_1k_topo.jpg'), bumpScale: 2.2, lonOffset: 0.5, proc: { type: PROC.ROCKY, seed: 41, craters: 0.2, detail: 0.5 } },
+    appearance: { map: T('mars_1k_color.jpg'), bump: T('mars_1k_topo.jpg'), bumpScale: 2.2, lonOffset: 0.5, proc: { type: PROC.ROCKY, seed: 41, craters: 0.2, detail: 0.5, detailOnly: true } },
     info: 'Cold desert world with Olympus Mons, Valles Marineris and polar CO₂/water ice caps.',
   },
   {
@@ -286,7 +286,7 @@ export const SOLAR_SYSTEM = [
     id: 'pluto', name: 'Pluto', kind: 'dwarf', parent: 'sun', gm: 869.326, radius: 1188.3,
     albedo: 0.72, geoAlbedo: 0.52, ephem: 'astronomy', iau: 'Pluto', rotation: { iau: 'Pluto' },
     atmosphere: 'pluto',
-    appearance: { map: T('plutomap2k.jpg'), bump: T('plutobump2k.jpg'), bumpScale: 0.8, lonOffset: 0.0, proc: { type: PROC.ROCKY, seed: 151, craters: 0.1, detail: 0.3 } },
+    appearance: { map: T('plutomap2k.jpg'), bump: T('plutobump2k.jpg'), bumpScale: 0.8, lonOffset: 0.0, proc: { type: PROC.ROCKY, seed: 151, craters: 0.1, detail: 0.3, detailOnly: true } },
     info: 'Kuiper-belt dwarf planet with the nitrogen-ice glacier Sputnik Planitia (“the heart”).',
   },
   {

@@ -90,9 +90,9 @@ export class MeterPass extends Pass {
     subj.sort((a, b) => a - b);
     const p95 = subj[Math.floor(subj.length * 0.95)];
     const logAvg = Math.exp(logSum / n);
-    let mult = 0.28 / logAvg;
+    let mult = 0.24 / logAvg;
     // Protect highlights: keep the 95th percentile of the subject below ~1 (pre tone mapping).
-    mult = Math.min(mult, 1.0 / p95);
+    mult = Math.min(mult, 0.8 / p95);
     return { frac, mult };
   }
 }

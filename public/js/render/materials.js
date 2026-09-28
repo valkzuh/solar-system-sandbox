@@ -133,8 +133,8 @@ Surf procRocky(vec3 p) {
   float c = 0.0;
   float f = 4.0;
   for (int i = 0; i < 4; i++) {
-    float fk = uRadius * 2.0 / f;
-    c += craters(p * f + uSeed * 3.1 + float(i) * 17.0, uProcA.x * (0.35 + 0.15 * float(i))) * detailFade(fk);
+    float fade = detailFade(uRadius * 2.0 / f);
+    if (fade > 0.0) c += craters(p * f + uSeed * 3.1 + float(i) * 17.0, uProcA.x * (0.35 + 0.15 * float(i))) * fade;
     f *= 2.7;
   }
   float h = base * 0.4 + c * 1.2;
@@ -341,36 +341,49 @@ Surf procSurface(vec3 p) {
   return procRocky(p);
 }
 
+// Surface height in unit-sphere units (1.0 = body radius). Crater depth scales with crater
+// size (depth/diameter ~ 0.2), so every octave contributes comparable slopes.
+float craterOctaves(vec3 p, float density, float f0, int n, float seedOff) {
+  float h = 0.0, f = f0;
+  for (int i = 0; i < 6; i++) {
+    if (i >= n) break;
+    float fade = detailFade(uRadius * 2.0 / f);
+    if (fade > 0.0) h += craters(p * f + uSeed * 3.1 + seedOff + float(i) * 17.0, density * (0.35 + 0.12 * float(i))) * fade * (0.5 / f);
+    f *= 2.7;
+  }
+  return h;
+}
+
 float surfHeight(vec3 p) {
-  // Height-only evaluation for normal perturbation (cheap path: rocky/icy features).
   if (uProcType == 1 || uProcType == 10) {
-    float c = 0.0, f = 4.0;
-    for (int i = 0; i < 4; i++) {
-      float fk = uRadius * 2.0 / f;
-      c += craters(p * f + uSeed * 3.1 + float(i) * 17.0, uProcA.x * (0.35 + 0.15 * float(i))) * detailFade(fk);
-      f *= 2.7;
-    }
-    float h = fbm((p * 2.0 + uSeed) * 1.5, 5) * 0.4 + c * 1.2;
-    if (uProcC.w > 0.5) h += craters(p * 26.0 + uSeed, 0.9) * 0.8;
+    float h = fbm((p * 2.0 + uSeed) * 1.5, 5) * 0.006 + craterOctaves(p, uProcA.x, 4.0, 6, 0.0);
+    if (uProcC.w > 0.5) h += craters(p * 26.0 + uSeed, 0.9) * (0.4 / 26.0);
     return h;
   }
-  if (uProcType == 2) {
-    return craters(p * 6.0 + uSeed, uProcA.x * 0.5) * detailFade(uRadius / 3.0) * 0.8 + fbm(p * 2.0 + uSeed, 4) * 0.1;
-  }
-  if (uProcType == 3 || uProcType == 7 || uProcType == 4) return fbm(p * 3.0 + uSeed, 5) * 0.3;
+  if (uProcType == 2) return craterOctaves(p, uProcA.x * 0.5, 6.0, 4, 5.0) + fbm(p * 2.0 + uSeed, 4) * 0.002;
+  if (uProcType == 3 || uProcType == 7 || uProcType == 4) return fbm(p * 3.0 + uSeed, 5) * 0.004;
   return 0.0;
 }
 
-vec3 perturbNormal(vec3 nLocal, float strength) {
-  // Finite-difference gradient of the height field on the sphere.
+// Fine crater detail layered over low-resolution maps (only octaves near pixel scale).
+float detailHeight(vec3 p) {
+  return craterOctaves(p, uProcA.x * 0.7 + 0.15, 60.0, 4, 11.0);
+}
+
+vec3 perturbNormalWith(vec3 nLocal, float strength, bool detailOnly) {
   vec3 t1 = normalize(cross(abs(nLocal.z) < 0.99 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0), nLocal));
   vec3 t2 = cross(nLocal, t1);
-  float e = 0.0015;
-  float h0 = surfHeight(nLocal);
-  float h1 = surfHeight(normalize(nLocal + t1 * e));
-  float h2 = surfHeight(normalize(nLocal + t2 * e));
+  // Differentiate at roughly the pixel footprint so slopes stay stable at every range.
+  float e = clamp(uPixelSize / max(uRadius, 1e-3), 2e-6, 0.002);
+  float h0 = detailOnly ? detailHeight(nLocal) : surfHeight(nLocal);
+  float h1 = detailOnly ? detailHeight(normalize(nLocal + t1 * e)) : surfHeight(normalize(nLocal + t1 * e));
+  float h2 = detailOnly ? detailHeight(normalize(nLocal + t2 * e)) : surfHeight(normalize(nLocal + t2 * e));
   vec3 g = (t1 * (h1 - h0) + t2 * (h2 - h0)) / e;
-  return normalize(nLocal - g * strength * 0.02);
+  return normalize(nLocal - g * strength);
+}
+
+vec3 perturbNormal(vec3 nLocal, float strength) {
+  return perturbNormalWith(nLocal, strength, false);
 }
 
 vec3 bumpFromMap(vec3 nLocal, vec2 uv, sampler2D tex, float strength, int channel) {
@@ -414,22 +427,39 @@ void main() {
     nPert = bumpFromMap(nLocal, uv, uPacked, 3.0 * (1.0 - ocean), 0);
     vec2 cuv = vec2(uv.x + uCloudOffset, uv.y);
     cloud = sampleEq(uPacked, cuv).b;
+    // Sub-texel detail when close: break up the soft cloud map and add terrain texture.
+    float cfade = detailFade(uRadius / 400.0);
+    if (cfade > 0.0) {
+      vec3 cq = nLocal * 180.0 + vec3(uCloudOffset * 40.0, 0.0, 0.0);
+      float cn = fbm(cq, 5);
+      cloud = clamp(cloud + (cn * 0.55) * cloud * (1.0 - cloud) * 2.5 * cfade, 0.0, 1.0);
+      float land = 1.0 - ocean;
+      albedo *= 1.0 + land * cfade * 0.35 * fbm(nLocal * 900.0, 5);
+    }
     cloud = smoothstep(0.08, 0.9, cloud);
     vec3 night = sampleEq(uNight, uv).rgb;
     float lum = dot(night, vec3(0.299, 0.587, 0.114));
     nightLights = vec3(1.0, 0.78, 0.52) * smoothstep(0.015, 0.3, lum) * 0.01 * (1.0 - cloud * 0.85);
   } else if (uHasMap) {
-    albedo = sampleEq(uMap, uv).rgb * uAlbedoScale;
+    vec3 tex = sampleEq(uMap, uv).rgb;
+    albedo = tex * uAlbedoScale;
     if (uHasBump) nPert = bumpFromMap(nLocal, uv, uBump, uBumpScale, 0);
     if (uProcType > 0 && uProcC.z > 0.5) {
-      // Fine procedural detail layered on top of low-resolution maps.
+      // Fine procedural detail layered on top of low-resolution maps. Dark, smooth plains
+      // (lunar maria, young lava) receive far fewer craters than bright highlands.
+      float lum = dot(tex, vec3(0.2126, 0.7152, 0.0722));
+      float highland = smoothstep(0.12, 0.35, lum);
       float fine = fbm(nLocal * 40.0 + uSeed, 4);
       float fade = detailFade(uRadius / 25.0);
       albedo *= 1.0 + fine * 0.18 * fade;
       if (uProcType == 1) {
-        float c = craters(nLocal * 60.0 + uSeed, uProcA.x) * detailFade(uRadius / 60.0);
-        albedo *= 1.0 + c * 0.4;
-        nPert = normalize(nPert + (nLocal - perturbNormal(nLocal, 1.0)) * -1.0 * detailFade(uRadius / 40.0));
+        float c = 0.0;
+        float f1 = detailFade(uRadius / 60.0), f2 = detailFade(uRadius / 190.0), f3 = detailFade(uRadius / 600.0);
+        if (f1 > 0.0) c += craters(nLocal * 60.0 + uSeed, uProcA.x) * f1;
+        if (f2 > 0.0) c += craters(nLocal * 190.0 + uSeed * 1.7, 0.5) * f2 * 0.6;
+        if (f3 > 0.0) c += craters(nLocal * 600.0 + uSeed * 2.3, 0.45) * f3 * 0.35;
+        albedo *= 1.0 + c * 0.4 + fbm(nLocal * 2000.0, 3) * 0.15 * detailFade(uRadius / 2000.0);
+        nPert = normalize(nPert + (perturbNormalWith(nLocal, 1.2, true) - nLocal) * mix(0.5, 1.0, highland));
       }
     }
     if (uMode == 2) {
@@ -444,7 +474,7 @@ void main() {
     spec = s.spec;
     roughness = mix(0.9, 0.15, spec);
     cloud = s.cloud;
-    if (uProcType != 5 && uProcType != 6 && uProcType != 8) nPert = perturbNormal(nLocal, 1.0 + uProcA.y);
+    if (uProcType != 5 && uProcType != 6 && uProcType != 8) nPert = perturbNormal(nLocal, 1.2 + uProcA.y);
   }
 
   vec3 Np = normalize(uRot * nPert);
