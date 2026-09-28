@@ -128,3 +128,20 @@ export function planetRadiusFromMass(mEarth) {
 }
 
 export const units = { MSUN, RSUN, LSUN, AU };
+
+// Visible-band thermal radiance of a blackbody surface at T, expressed in the renderer's
+// radiance units (1.0 = a white Lambertian surface lit by the Sun at 1 AU), plus its colour.
+// Integrates Planck's law over 400-700 nm.
+function planckVisible(T) {
+  let s = 0;
+  for (let nm = 400; nm <= 700; nm += 10) {
+    const l = nm * 1e-9;
+    s += 1 / (Math.pow(l, 5) * (Math.exp(0.0143877735 / (l * T)) - 1));
+  }
+  return s;
+}
+const SUN_VIS = planckVisible(5772) * 2.1647e-5; // (R_sun / AU)^2 dilution
+export function thermalGlow(tK) {
+  if (tK < 600) return { value: 0, color: [1, 0.3, 0.05] };
+  return { value: planckVisible(tK) / SUN_VIS, color: blackbodyRGB(tK) };
+}

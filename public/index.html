@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Solar System Sandbox</title>
+    <meta name="description" content="A physically realistic, real-time solar system sandbox: N-body gravity, real ephemerides, atmospheric scattering, eclipses, collisions and black holes." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./vendor/three/three.module.js",
+          "three/addons/": "./vendor/three/addons/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <div id="labels"></div>
+    <div id="placeHint" class="hidden"></div>
+
+    <header id="topbar">
+      <div class="brand"><span class="logo"></span>Solar System Sandbox</div>
+      <div class="search">
+        <input id="search" type="search" placeholder="Find a body…  ( / )" autocomplete="off" spellcheck="false" />
+        <div id="searchResults" class="hidden"></div>
+      </div>
+      <nav class="tabs" id="tabs">
+        <button data-tab="scenarios" title="Scenarios (1)">Scenarios</button>
+        <button data-tab="create" title="Create bodies (2)">Create</button>
+        <button data-tab="view" title="View settings (3)">View</button>
+        <button data-tab="physics" title="Physics settings (4)">Physics</button>
+        <button data-tab="save" title="Save &amp; load (5)">Save</button>
+        <button id="helpBtn" title="Help (?)">?</button>
+        <a href="info" class="navlink" target="_blank" rel="noopener" title="Physics notes">Info</a>
+      </nav>
+    </header>
+
+    <aside id="drawer" class="panel hidden">
+      <div class="panel-head">
+        <h2 id="drawerTitle">Scenarios</h2>
+        <button class="icon" id="drawerClose" title="Close">✕</button>
+      </div>
+      <div class="panel-body">
+        <section data-pane="scenarios">
+          <p class="hint">Real initial conditions are computed for the chosen date from VSOP87/ELP theories.</p>
+          <div class="row"><label>Date</label><input id="scenarioDate" type="datetime-local" step="1" /></div>
+          <div id="scenarioList" class="cards"></div>
+        </section>
+
+        <section data-pane="create">
+          <p class="hint">Pick a template, then click in the scene to place it. Drag while placing to throw it with a velocity; release without dragging for a circular orbit around the dominant body.</p>
+          <div id="templateList" class="templates"></div>
+          <div class="group">
+            <div class="row"><label>Mass</label><input id="createMass" type="range" min="0" max="1000" step="1" /><span class="value" id="createMassVal"></span></div>
+            <div class="row"><label>Orbit</label>
+              <select id="createOrbit">
+                <option value="circular">Circular (prograde)</option>
+                <option value="retro">Circular (retrograde)</option>
+                <option value="rest">At rest</option>
+              </select>
+            </div>
+            <div class="row"><label>Plane</label>
+              <select id="createPlane">
+                <option value="primary">Primary’s orbital plane</option>
+                <option value="ecliptic">Ecliptic</option>
+                <option value="view">Facing camera</option>
+              </select>
+            </div>
+          </div>
+          <div class="row"><button id="cancelPlace" class="ghost">Cancel placing (Esc)</button></div>
+        </section>
+
+        <section data-pane="view">
+          <div class="group">
+            <h3>Display</h3>
+            <div class="row"><label>Orbits</label><input type="checkbox" id="optOrbits" checked /></div>
+            <div class="row"><label>Labels</label><input type="checkbox" id="optLabels" checked /></div>
+            <div class="row"><label>Markers</label><input type="checkbox" id="optMarkers" checked /></div>
+            <div class="row"><label>Trails</label><input type="checkbox" id="optTrails" /></div>
+            <div class="row"><label>Asteroid &amp; Kuiper belts</label><input type="checkbox" id="optBelts" checked /></div>
+            <div class="row"><label>Comet tails</label><input type="checkbox" id="optComets" checked /></div>
+            <div class="row"><label>Constellations</label><input type="checkbox" id="optConstellations" /></div>
+            <div class="row"><label>Atmospheres</label><input type="checkbox" id="optAtmos" checked /></div>
+          </div>
+          <div class="group">
+            <h3>Scale</h3>
+            <div class="row"><label>Body size ×</label><input id="optScale" type="range" min="0" max="3" step="0.01" value="0" /><span class="value" id="optScaleVal">1×</span></div>
+            <p class="hint">1× is true scale. Enlarging bodies is purely visual; physics always uses real radii.</p>
+          </div>
+          <div class="group">
+            <h3>Camera &amp; exposure</h3>
+            <div class="row"><label>Auto exposure</label><input type="checkbox" id="optAutoExp" checked /></div>
+            <div class="row"><label>Exposure (EV)</label><input id="optExposure" type="range" min="-8" max="8" step="0.1" value="0" /><span class="value" id="optExposureVal">0</span></div>
+            <div class="row"><label>Field of view</label><input id="optFov" type="range" min="5" max="100" step="1" value="50" /><span class="value" id="optFovVal">50°</span></div>
+            <div class="row"><label>Star brightness</label><input id="optStars" type="range" min="0" max="3" step="0.05" value="1" /></div>
+            <div class="row"><label>Milky Way</label><input id="optMilkyWay" type="range" min="0" max="3" step="0.05" value="1" /></div>
+            <div class="row"><label>Belt visibility</label><input id="optBeltInt" type="range" min="0" max="3" step="0.05" value="1" /></div>
+            <div class="row"><label>Bloom</label><input id="optBloom" type="range" min="0" max="2" step="0.05" value="0.85" /></div>
+            <div class="row"><label>Diffraction spikes</label><input type="checkbox" id="optSpikes" /></div>
+            <div class="row"><label>Auto-rotate</label><input type="checkbox" id="optAutoRotate" /></div>
+          </div>
+          <div class="group">
+            <h3>Quality</h3>
+            <div class="row"><label>Render quality</label>
+              <select id="optQuality"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option></select>
+            </div>
+          </div>
+        </section>
+
+        <section data-pane="physics">
+          <div class="group">
+            <h3>Integrator</h3>
+            <div class="row"><label>Accuracy</label>
+              <select id="optAccuracy">
+                <option value="0.015">Fast</option>
+                <option value="0.005" selected>Balanced</option>
+                <option value="0.0015">Precise</option>
+              </select>
+            </div>
+            <div class="row"><label>CPU budget / frame</label><input id="optBudget" type="range" min="2" max="30" step="1" value="10" /><span class="value" id="optBudgetVal">10 ms</span></div>
+            <p class="hint">4th-order Hermite integrator with individual block time-steps and P(EC)² correction. When the warp exceeds what the CPU budget allows, time runs slower than requested (shown in amber).</p>
+          </div>
+          <div class="group">
+            <h3>Forces &amp; events</h3>
+            <div class="row"><label>General relativity (1PN)</label><input type="checkbox" id="optGR" checked /></div>
+            <div class="row"><label>Collisions &amp; mergers</label><input type="checkbox" id="optCollisions" checked /></div>
+            <div class="row"><label>Tidal disruption (Roche)</label><input type="checkbox" id="optRoche" checked /></div>
+          </div>
+          <div class="group">
+            <h3>Diagnostics</h3>
+            <div class="metric"><span>Bodies</span><span id="diagBodies">–</span></div>
+            <div class="metric"><span>Integration steps / frame</span><span id="diagSteps">–</span></div>
+            <div class="metric"><span>Energy drift ΔE/E</span><span id="diagEnergy">–</span></div>
+            <div class="metric"><span>Frame time</span><span id="diagFrame">–</span></div>
+            <div class="row"><button id="resetEnergy" class="ghost">Reset energy reference</button><button id="recenter" class="ghost">Recentre barycentre</button></div>
+          </div>
+        </section>
+
+        <section data-pane="save">
+          <div class="group">
+            <h3>This browser</h3>
+            <div class="row"><button id="quickSave" class="primary">Quick save</button><button id="quickLoad" class="ghost">Quick load</button></div>
+          </div>
+          <div class="group">
+            <h3>File</h3>
+            <div class="row"><button id="exportBtn" class="ghost">Export .json</button><label class="filebtn ghost">Import…<input id="importFile" type="file" accept=".json,application/json" /></label></div>
+          </div>
+          <div class="group" id="serverGroup">
+            <h3>Server</h3>
+            <div class="row"><input id="serverName" type="text" placeholder="scenario name" maxlength="64" /><button id="serverSave" class="primary">Save</button></div>
+            <div id="serverList" class="list"></div>
+          </div>
+        </section>
+      </div>
+    </aside>
+
+    <aside id="inspector" class="panel hidden">
+      <div class="panel-head">
+        <div>
+          <input id="insName" class="title-input" spellcheck="false" />
+          <div class="sub" id="insKind"></div>
+        </div>
+        <button class="icon" id="insClose" title="Deselect">✕</button>
+      </div>
+      <div class="panel-body">
+        <div class="row actions">
+          <button id="insFocus" class="primary" title="Fly to (F)">Fly to</button>
+          <button id="insFollow" class="ghost" title="Keep camera distance, re-centre">Centre</button>
+          <button id="insDelete" class="danger" title="Delete (Del)">Delete</button>
+        </div>
+        <p class="info" id="insInfo"></p>
+        <div class="group">
+          <h3>Physical</h3>
+          <div id="insPhysical"></div>
+          <div class="row"><label>Mass</label><input id="insMass" type="range" min="-3" max="3" step="0.01" value="0" /><span class="value" id="insMassVal"></span></div>
+          <div class="row" id="insRadiusRow"><label>Radius</label><input id="insRadius" type="range" min="-1" max="1" step="0.01" value="0" /><span class="value" id="insRadiusVal"></span></div>
+        </div>
+        <div class="group">
+          <h3>Orbit <span class="sub" id="insPrimary"></span></h3>
+          <div id="insOrbit"></div>
+          <div class="row actions">
+            <button id="insCircularize" class="ghost" title="Set a circular orbit at the current distance">Circularise</button>
+            <button id="insBoost" class="ghost" title="+10% prograde Δv">Boost +10%</button>
+            <button id="insBrake" class="ghost" title="−10% retrograde Δv">Brake −10%</button>
+          </div>
+          <div class="row actions">
+            <button id="insStop" class="ghost" title="Zero velocity relative to primary">Stop</button>
+            <button id="insReverse" class="ghost" title="Reverse velocity relative to primary">Reverse</button>
+          </div>
+        </div>
+        <div class="group">
+          <h3>Transform</h3>
+          <div class="row actions">
+            <button id="insCollapse" class="ghost" title="Collapse into a black hole of the same mass">→ Black hole</button>
+            <button id="insIgnite" class="ghost" title="Turn into a main-sequence star of the same mass">→ Star</button>
+            <button id="insSupernova" class="danger" title="Core-collapse supernova (stars ≥ 8 M☉)">Supernova</button>
+          </div>
+        </div>
+        <div class="group">
+          <div class="row"><label>Show orbit</label><input type="checkbox" id="insShowOrbit" /></div>
+          <div class="row"><label>Show label</label><input type="checkbox" id="insShowLabel" /></div>
+        </div>
+      </div>
+    </aside>
+
+    <footer id="timebar">
+      <div class="clock">
+        <div id="dateText">—</div>
+        <div id="timeText" class="mono">—</div>
+      </div>
+      <div class="controls">
+        <button id="tReverse" class="icon" title="Reverse time (R)">⏪</button>
+        <button id="tSlower" class="icon" title="Slower ( , )">−</button>
+        <button id="tPause" class="icon big" title="Pause (Space)">⏸</button>
+        <button id="tFaster" class="icon" title="Faster ( . )">+</button>
+        <button id="tNow" class="ghost" title="Real time">1×</button>
+      </div>
+      <div class="rate">
+        <div id="warpText" class="mono">—</div>
+        <div id="rateText" class="mono sub">—</div>
+      </div>
+    </footer>
+
+    <div id="toasts"></div>
+    <div id="help" class="overlay hidden">
+      <div class="panel help">
+        <div class="panel-head"><h2>Controls</h2><button class="icon" id="helpClose">✕</button></div>
+        <div class="panel-body">
+          <table>
+            <tr><td>Drag</td><td>Orbit the camera</td></tr>
+            <tr><td>Right-drag / Shift-drag</td><td>Pan</td></tr>
+            <tr><td>Wheel / pinch</td><td>Zoom (logarithmic, metres to light-years)</td></tr>
+            <tr><td>Alt + wheel</td><td>Field of view (telescope zoom)</td></tr>
+            <tr><td>Click / double-click</td><td>Select / fly to a body</td></tr>
+            <tr><td>Space</td><td>Pause / resume</td></tr>
+            <tr><td>, &nbsp;.</td><td>Slower / faster time</td></tr>
+            <tr><td>R</td><td>Reverse time</td></tr>
+            <tr><td>F</td><td>Fly to selection</td></tr>
+            <tr><td>Del</td><td>Delete selection</td></tr>
+            <tr><td>O / L / T / C</td><td>Toggle orbits / labels / trails / constellations</td></tr>
+            <tr><td>H</td><td>Hide interface (screenshot mode)</td></tr>
+            <tr><td>/</td><td>Search</td></tr>
+            <tr><td>1–5</td><td>Open panels</td></tr>
+            <tr><td>Esc</td><td>Cancel / close</td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div id="loading" class="overlay">
+      <div class="loader">
+        <div class="spinner"></div>
+        <div id="loadingText">Loading…</div>
+      </div>
+    </div>
+    <noscript>This app needs JavaScript and WebGL2.</noscript>
+    <script type="module" src="js/main.js"></script>
+  </body>
+</html>

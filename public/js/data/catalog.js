@@ -26,9 +26,9 @@ export const PROC = {
 
 export const ATMOSPHERES = {
   earth: { height: 100, rayleigh: [5.802e-3, 13.558e-3, 33.1e-3], rayleighH: 8.0, mie: 3.996e-3, mieH: 1.2, mieG: 0.8, mieColor: [1, 1, 1], absorb: [0.65e-3, 1.881e-3, 0.085e-3], absorbH: 25 },
-  mars: { height: 80, rayleigh: [0.19e-3, 0.1e-3, 0.058e-3], rayleighH: 11.1, mie: 0.9e-3, mieH: 11.1, mieG: 0.65, mieColor: [1.0, 0.62, 0.38], absorb: [0, 0, 0], absorbH: 10 },
+  mars: { height: 80, rayleigh: [0.19e-3, 0.1e-3, 0.058e-3], rayleighH: 11.1, mie: 0.03, mieH: 11.1, mieG: 0.65, mieColor: [1.0, 0.62, 0.38], absorb: [0, 0, 0], absorbH: 10 },
   venus: { height: 250, rayleigh: [0.9e-3, 0.62e-3, 0.3e-3], rayleighH: 15.9, mie: 0.9e-3, mieH: 22, mieG: 0.7, mieColor: [1.0, 0.86, 0.62], absorb: [0, 0.02e-3, 0.08e-3], absorbH: 20 },
-  titan: { height: 600, rayleigh: [0.12e-3, 0.06e-3, 0.02e-3], rayleighH: 40, mie: 0.2e-3, mieH: 55, mieG: 0.6, mieColor: [1.0, 0.6, 0.25], absorb: [0.0, 0.03e-3, 0.09e-3], absorbH: 60 },
+  titan: { height: 600, rayleigh: [0.12e-3, 0.06e-3, 0.02e-3], rayleighH: 40, mie: 0.06, mieH: 55, mieG: 0.6, mieColor: [1.0, 0.6, 0.25], absorb: [0.0, 0.03e-3, 0.09e-3], absorbH: 60 },
   jupiter: { height: 600, rayleigh: [0.02e-3, 0.035e-3, 0.08e-3], rayleighH: 27, mie: 0.02e-3, mieH: 27, mieG: 0.7, mieColor: [1.0, 0.9, 0.8], absorb: [0, 0, 0], absorbH: 27 },
   saturn: { height: 800, rayleigh: [0.012e-3, 0.02e-3, 0.045e-3], rayleighH: 59.5, mie: 0.02e-3, mieH: 59.5, mieG: 0.7, mieColor: [1.0, 0.92, 0.75], absorb: [0, 0, 0], absorbH: 59 },
   uranus: { height: 500, rayleigh: [0.02e-3, 0.06e-3, 0.08e-3], rayleighH: 27.7, mie: 0.01e-3, mieH: 27.7, mieG: 0.7, mieColor: [0.8, 1.0, 1.0], absorb: [0.02e-3, 0, 0], absorbH: 27 },
