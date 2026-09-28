@@ -6,8 +6,8 @@
 import * as THREE from 'three';
 import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 
-const W = 48;
-const H = 27;
+const W = 96;
+const H = 54;
 
 export class MeterPass extends Pass {
   constructor() {
@@ -23,16 +23,16 @@ export class MeterPass extends Pass {
         varying vec2 vUv;
         void main() {
           float sum = 0.0, mx = 0.0;
-          for (int y = 0; y < 5; y++) {
-            for (int x = 0; x < 5; x++) {
-              vec2 o = (vec2(float(x), float(y)) + 0.5) / 5.0 - 0.5;
+          for (int y = 0; y < 4; y++) {
+            for (int x = 0; x < 4; x++) {
+              vec2 o = (vec2(float(x), float(y)) + 0.5) / 4.0 - 0.5;
               vec3 c = texture2D(tDiffuse, vUv + o * uTexel).rgb;
               float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
               sum += l;
               mx = max(mx, l);
             }
           }
-          gl_FragColor = vec4(sum / 25.0, mx, 0.0, 1.0);
+          gl_FragColor = vec4(sum / 16.0, mx, 0.0, 1.0);
         }
       `,
       depthTest: false,
@@ -55,12 +55,12 @@ export class MeterPass extends Pass {
     try {
       renderer.readRenderTargetPixels(this.rt, 0, 0, W, H, this.buffer);
       const avg = new Float32Array(W * H);
-      let max = 0;
+      const maxs = new Float32Array(W * H);
       for (let i = 0; i < W * H; i++) {
         avg[i] = this.buffer[i * 4];
-        max = Math.max(max, this.buffer[i * 4 + 1]);
+        maxs[i] = this.buffer[i * 4 + 1];
       }
-      this.result = { avg, max, exposure: this.exposureAtRender };
+      this.result = { avg, maxs, exposure: this.exposureAtRender };
     } catch (e) {
       this.result = null;
     }
@@ -77,22 +77,23 @@ export class MeterPass extends Pass {
     // "Subject" pixels: within ~6 stops of the brightest block (ignores the sky and glow).
     const thresh = lmax / 64;
     let n = 0, logSum = 0;
-    const subj = [];
-    for (const v of avg) {
+    const hi = [];
+    for (let i = 0; i < avg.length; i++) {
+      const v = avg[i];
       if (v > thresh && v > 1e-7) {
         n++;
         logSum += Math.log(v);
-        subj.push(v);
+        hi.push(result.maxs ? result.maxs[i] : v);
       }
     }
     const frac = n / avg.length;
-    if (frac < 0.012) return { frac, mult: null }; // subject too small to meter reliably
-    subj.sort((a, b) => a - b);
-    const p95 = subj[Math.floor(subj.length * 0.95)];
+    if (frac < 0.01) return { frac, mult: null }; // subject too small to meter reliably
+    hi.sort((a, b) => a - b);
+    const p97 = hi[Math.floor(hi.length * 0.97)];
     const logAvg = Math.exp(logSum / n);
     let mult = 0.24 / logAvg;
-    // Protect highlights: keep the 95th percentile of the subject below ~1 (pre tone mapping).
-    mult = Math.min(mult, 0.8 / p95);
+    // Protect highlights: keep the brightest subject pixels below ~1 before tone mapping.
+    mult = Math.min(mult, 1.0 / p97);
     return { frac, mult };
   }
 }
