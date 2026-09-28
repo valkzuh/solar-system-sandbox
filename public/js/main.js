@@ -238,6 +238,24 @@ class App {
     this.exposure = Math.exp(Math.log(this.exposure) + (Math.log(target) - Math.log(this.exposure)) * k);
   }
 
+  // Adaptive fidelity: tiny moons (< 1e-4 of their planet's mass) that would cover more than
+  // ~1/4 orbit per second of real time are propagated analytically. Their gravitational
+  // influence is negligible; this frees the integrator for everything else. Hysteresis
+  // avoids flapping when the warp hovers near the threshold.
+  updateRails() {
+    const w = this.paused ? 0 : Math.abs(this.warp);
+    const list = [];
+    for (const b of this.sim.bodies) {
+      const p = b.primary;
+      if (!p || !b.orbit || b.massless || b.kind === 'debris' || !(b.orbit.e < 0.9)) continue;
+      if (b.mass > 1e-4 * p.mass || p.massless) continue;
+      const P = b.orbit.period;
+      const railed = this.sim.railSet.has(b);
+      if (w > (railed ? 2 : 4) * P) list.push(b);
+    }
+    this.sim.setRails(list);
+  }
+
   setWarp(w) {
     this.warp = w;
     this.paused = false;
@@ -272,6 +290,12 @@ class App {
     }
     const simStep = this.sim.time - tBefore;
     this.achievedWarp = dt > 0 ? simStep / dt : 0;
+
+    this.railTimer = (this.railTimer || 0) - dt;
+    if (this.railTimer <= 0) {
+      this.updateRails();
+      this.railTimer = 0.5;
+    }
 
     this.hierarchyTimer -= dt;
     if (this.hierarchyTimer <= 0) {

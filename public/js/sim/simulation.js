@@ -12,6 +12,7 @@
 // used here are time-reversal symmetric).
 
 import { C_KMS } from '../core/constants.js';
+import { elementsToState, stateToElements } from '../core/kepler.js';
 
 const C2 = C_KMS * C_KMS;
 
@@ -39,6 +40,7 @@ export class Simulation {
     this.massive = new Int32Array(0);
     this.nMassive = 0;
     this.version = 0; // bumps whenever the body list changes
+    this.railSet = new Set(); // small fast moons propagated analytically at high warp
     this._alloc(64);
   }
 
@@ -64,6 +66,7 @@ export class Simulation {
     this.tdyn = new Float64Array(cap);
     this.j2R2 = new Float64Array(cap);
     this.poleArr = new Float64Array(cap * 3);
+    this.rails = new Uint8Array(cap);
   }
 
   // ---------------------------------------------------------------------------
@@ -124,7 +127,9 @@ export class Simulation {
     list.forEach((b) => {
       b.index = -1;
       b.sim = null;
+      this.railSet.delete(b);
     });
+    for (const b of [...this.railSet]) if (dead.has(b._rails.primary)) this.railSet.delete(b);
     keep.forEach((b, k) => (b.index = k));
     this.bodies = keep;
     this.n = keep.length;
@@ -134,6 +139,7 @@ export class Simulation {
   }
 
   clear() {
+    this.railSet.clear();
     this.bodies.forEach((b) => {
       b.index = -1;
       b.sim = null;
@@ -187,18 +193,19 @@ export class Simulation {
     }
     const tau = this.tau;
     let behind = false;
-    for (let i = 0; i < n; i++) if (this.t[i] < tau) behind = true;
+    for (let i = 0; i < n; i++) if (this.t[i] < tau && !this.rails[i]) behind = true;
     if (behind) {
       this._predictAll(tau);
       const acc = [0, 0, 0, 0, 0, 0];
       for (let i = 0; i < n; i++) {
         const h = tau - this.t[i];
-        if (h <= 0) continue;
+        if (h <= 0 || this.rails[i]) continue;
         this._force(i, acc);
         this._correct(i, h, acc);
         this.t[i] = tau;
       }
     }
+    this._applyRails(this.x, this.v);
     // Commit positions for rendering.
     this.rx.set(this.x.subarray(0, n * 3));
     this.rv.set(this.v.subarray(0, n * 3));
@@ -231,7 +238,8 @@ export class Simulation {
       const rhoSI = b.radius > 0 ? (b.mass / ((4 / 3) * Math.PI * b.radius ** 3)) * 1e-9 : 1;
       this.tdyn[i] = 1 / Math.sqrt(6.674e-11 * Math.max(rhoSI, 1e-3));
       this.rocheTime[i] = b._rocheTime || 0;
-      if (!b.massless && b.mass > 0) massive.push(i);
+      this.rails[i] = this.railSet.has(b) ? 1 : 0;
+      if (!b.massless && b.mass > 0 && !this.rails[i]) massive.push(i);
     }
     this.massive = Int32Array.from(massive);
     this.nMassive = massive.length;
@@ -241,6 +249,11 @@ export class Simulation {
     this.xp.set(this.x.subarray(0, n * 3));
     this.vp.set(this.v.subarray(0, n * 3));
     for (let i = 0; i < n; i++) {
+      if (this.rails[i]) {
+        this.dt[i] = Infinity;
+        this.t[i] = 0;
+        continue;
+      }
       this._force(i, acc);
       const i3 = i * 3;
       this.a[i3] = acc[0]; this.a[i3 + 1] = acc[1]; this.a[i3 + 2] = acc[2];
@@ -595,7 +608,51 @@ export class Simulation {
 
   _predictRender(tt) {
     const { x, v, a, j, rx, rv, t } = this;
-    for (let i = 0; i < this.n; i++) this._predict(i, tt, x, v, a, j, rx, rv, t);
+    for (let i = 0; i < this.n; i++) if (!this.rails[i]) this._predict(i, tt, x, v, a, j, rx, rv, t);
+    this._applyRails(rx, rv);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Analytic ("on rails") propagation for tiny, fast satellites at extreme time warp.
+
+  // Replace the set of railed bodies. Each entry is propagated on a fixed Kepler orbit
+  // around its primary until released, when it resumes full N-body integration.
+  setRails(list) {
+    const want = new Set(list);
+    let changed = want.size !== this.railSet.size;
+    if (!changed) for (const b of want) if (!this.railSet.has(b)) changed = true;
+    if (!changed) return false;
+    this.sync();
+    for (const b of want) {
+      if (this.railSet.has(b) || !b.primary || !b.primary.sim) continue;
+      const p = b.primary;
+      const i3 = b.index * 3, p3 = p.index * 3, d = this.dir;
+      const r = [this.x[i3] - this.x[p3], this.x[i3 + 1] - this.x[p3 + 1], this.x[i3 + 2] - this.x[p3 + 2]];
+      const vv = [(this.v[i3] - this.v[p3]) * d, (this.v[i3 + 1] - this.v[p3 + 1]) * d, (this.v[i3 + 2] - this.v[p3 + 2]) * d];
+      const mu = (p.gm + b.gm);
+      const el = stateToElements(mu, r, vv);
+      if (!(el.e < 0.95) || !(el.a > 0)) continue;
+      b._rails = { primary: p, mu, el: { a: el.a, e: el.e, i: el.i, node: el.node, argp: el.argp }, M0: el.M, n: Math.sqrt(mu / el.a ** 3), t0: this.time };
+    }
+    this.railSet = new Set([...want].filter((b) => b._rails && b._rails.primary.sim));
+    this.reinit();
+    return true;
+  }
+
+  _applyRails(X, V) {
+    if (!this.railSet.size) return;
+    const d = this.dir;
+    for (const b of this.railSet) {
+      const R = b._rails;
+      const p = R.primary;
+      if (!p.sim || b.index < 0) continue;
+      const st = elementsToState(R.mu, { ...R.el, M: R.M0 + R.n * (this.time - R.t0) });
+      const i3 = b.index * 3, p3 = p.index * 3;
+      for (let c = 0; c < 3; c++) {
+        X[i3 + c] = X[p3 + c] + st.r[c];
+        V[i3 + c] = V[p3 + c] + st.v[c] * d;
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -606,12 +663,12 @@ export class Simulation {
     const { rx, rv, bodies, n } = this;
     for (let i = 0; i < n; i++) {
       const b = bodies[i];
-      if (b.massless) continue;
+      if (b.massless || this.rails[i]) continue;
       const i3 = i * 3;
       ke += 0.5 * b.mass * (rv[i3] ** 2 + rv[i3 + 1] ** 2 + rv[i3 + 2] ** 2);
       for (let k = i + 1; k < n; k++) {
         const c = bodies[k];
-        if (c.massless) continue;
+        if (c.massless || this.rails[k]) continue;
         const k3 = k * 3;
         const r = Math.hypot(rx[i3] - rx[k3], rx[i3 + 1] - rx[k3 + 1], rx[i3 + 2] - rx[k3 + 2]);
         pe -= (b.gm * c.mass) / Math.max(r, 1e-9);
