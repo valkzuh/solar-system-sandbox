@@ -495,8 +495,14 @@ void main() {
   }
   color += nightLights * night;
   color += emit;
-  color += uThermal * (0.7 + 0.3 * fbm(nLocal * 8.0 + uTime * 1e-4, 3));
-  gl_FragColor = vec4(color * uExposure, 1.0);
+  if (uThermal.r > 0.0) {
+    // Molten / hot surface: a darker chilled crust broken by brighter glowing cracks.
+    vec3 q = nLocal * 3.0 + uSeed;
+    float cracks = smoothstep(0.8, 0.97, ridged(q * 2.0 + vec3(uTime * 2e-6), 5));
+    float crust = smoothstep(-0.2, 0.5, fbm(q + vec3(0.0, uTime * 1e-6, 0.0), 5));
+    color += uThermal * mix(1.0, 0.25 + 1.6 * cracks, crust * 0.85);
+  }
+  gl_FragColor = vec4(min(color * uExposure, vec3(80.0)), 1.0);
 }
 `;
 
@@ -825,7 +831,8 @@ void main() {
   vec3 u2 = vec3(0.25, 0.2, 0.12);
   vec3 limb = 1.0 - u1 * (1.0 - mu) - u2 * (1.0 - mu) * (1.0 - mu);
   vec3 col = uColor * limb * (1.0 + gran) * spots;
-  gl_FragColor = vec4(col * uBrightness, 1.0);
+  // Clamp to keep bloom sane; saturated discs still read as blinding white.
+  gl_FragColor = vec4(min(col * uBrightness, vec3(80.0)), 1.0);
 }
 `;
 

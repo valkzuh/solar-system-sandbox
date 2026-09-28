@@ -15,7 +15,9 @@ import { Belts } from './belts.js';
 import { CometTails } from './comets.js';
 import { LensingShader, MAX_LENSES } from './lensing.js';
 import { MeterPass } from './meter.js';
-import { balancedBlackbody, thermalGlow, blackbodyRGB } from '../core/stellar.js';
+import { DebrisRenderer } from './debris.js';
+import { Zones } from './zones.js';
+import { balancedBlackbody, thermalGlow, blackbodyRGB, starSurfaceRadiance } from '../core/stellar.js';
 import { eclToRender } from '../core/vec.js';
 import { AU, RSUN } from '../core/constants.js';
 import { ATMOSPHERES } from '../data/catalog.js';
@@ -43,14 +45,19 @@ export class Renderer {
     this.gl.outputColorSpace = THREE.SRGBColorSpace;
     this.gl.autoClear = false;
     this.scene = new THREE.Scene();
+    // Non-physical overlays (orbit lines, placement preview) are rendered after light
+    // metering so they never influence exposure; they still depth-test against bodies.
+    this.overlay = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(50, 1, 1e-4, 1e14);
     this.textures = new TextureCache(this.gl);
     this.sky = new Sky();
     this.points = new PointSprites();
     this.scene.add(this.points.points);
-    this.orbits = new OrbitRenderer(this.scene);
+    this.orbits = new OrbitRenderer(this.overlay);
     this.belts = new Belts(this.scene);
     this.comets = new CometTails(this.scene);
+    this.debris = new DebrisRenderer(this.scene);
+    this.zones = new Zones(this.overlay);
     this.visuals = new Map();
     this.settings = {
       quality: 'medium',
@@ -76,11 +83,7 @@ export class Renderer {
 
   _initComposer() {
     const size = this.gl.getDrawingBufferSize(new THREE.Vector2());
-    const rt = new THREE.WebGLRenderTarget(Math.max(size.x, 1), Math.max(size.y, 1), {
-      type: THREE.HalfFloatType,
-      depthTexture: new THREE.DepthTexture(1, 1, THREE.FloatType),
-    });
-    rt.depthTexture.format = THREE.DepthFormat;
+    const rt = new THREE.WebGLRenderTarget(Math.max(size.x, 1), Math.max(size.y, 1), { type: THREE.HalfFloatType });
     this.composer = new EffectComposer(this.gl, rt);
     this.skyPass = new RenderPass(this.sky.scene, this.camera);
     this.skyPass.clear = true;
@@ -95,6 +98,10 @@ export class Renderer {
     this.composer.addPass(this.mainPass);
     this.meter = new MeterPass();
     this.composer.addPass(this.meter);
+    this.overlayPass = new RenderPass(this.overlay, this.camera);
+    this.overlayPass.clear = false;
+    this.overlayPass.clearDepth = false;
+    this.composer.addPass(this.overlayPass);
     this.composer.addPass(this.lensPass);
     this.composer.addPass(this.bloomPass);
     this.composer.addPass(this.outputPass);
@@ -272,6 +279,8 @@ export class Renderer {
     const mainStar = stars.length ? stars.reduce((a, s) => (s.body.mass > a.body.mass ? s : a)).body : null;
     this.belts.update(mainStar, camPos, sim.time, ctx);
     this.comets.update(camPos, ctx);
+    this.debris.update(bodies, camPos, mainStar, ctx, frame.simTime);
+    this.zones.update(frame.selected, camPos);
 
     // Post-processing configuration.
     this.lensPass.enabled = this.settings.lensing && this.lenses.length > 0;
@@ -306,7 +315,7 @@ export class Renderer {
     });
     const h = this.height * this.pixelRatio, w = this.width * this.pixelRatio;
     u.uRadPerUv.value.set(pixelAngle * w, pixelAngle * h);
-    u.tDepth.value = this.composer.renderTarget1.depthTexture || null;
+    u.tDepth.value = null;
     u.uUseDepth.value = false;
   }
 
@@ -354,22 +363,23 @@ export class Renderer {
       u.uPixelSize.value = pixelSize;
       u.uRadius.value = visR;
       u.uInvScale2.value.set(1 / (sx * sx), 1 / (sy * sy), 1 / (sz * sz));
-      // Solar-filter behaviour: when the disc is large on screen reduce brightness so the
-      // photosphere detail (granulation, spots, limb darkening) remains visible.
-      const close = THREE.MathUtils.smoothstep(pxR, 12, 160);
-      u.uBrightness.value = 16 + (1.25 - 16) * close;
-      // Glow billboard: corona (always) + glare (scaled by visible fraction of the disc).
+      // Physical surface radiance scaled by the camera exposure (the metering loop lowers the
+      // exposure when a large, bright disc fills the frame, revealing granulation).
+      const radiance = starSurfaceRadiance(b.star.temperature) * (b.kind === 'neutron' ? 0.2 : 1);
+      u.uBrightness.value = radiance * exposure;
+      // Glow billboard: corona (physical, ~1e-6 of the disc) + veiling glare of the camera/eye
+      // (proportional to the flux reaching the sensor and the visible fraction of the disc).
       const gmU = v.glowMat.uniforms;
       gmU.uCenter.value.set(rp[0], rp[1], rp[2]);
       const flux = (b.star.luminosity * AU * AU) / (D * D);
-      const glarePx = Math.min(Math.max(pxR * 6, 30 + 60 * Math.log10(1 + flux * 10)), ctx.heightPx * 0.8);
+      const glarePx = Math.min(Math.max(pxR * 6, 30 + 60 * Math.log10(1 + flux * exposure * 10)), ctx.heightPx * 0.8);
       const size = Math.max(glarePx * pixelSize, visR * 12);
       gmU.uSize.value = size;
       gmU.uCoreFrac.value = visR / size;
       gmU.uColor.value.set(col[0], col[1], col[2]);
       const vis = this._starVisibility(b, rp, visR, D, frame);
-      gmU.uGlare.value = Math.min(flux, 50) * vis * 1.2 * (b.kind === 'star' ? 1 : 0.6) * (1 - close);
-      gmU.uCorona.value = b.kind === 'star' ? 0.12 : 0.02;
+      gmU.uGlare.value = Math.min(flux * exposure * 0.6, 30) * vis;
+      gmU.uCorona.value = b.kind === 'star' ? Math.min(2.5e-6 * radiance * exposure, 50) : 0;
       gmU.uSpikes.value = this.settings.spikes ? 1.5 : 0;
       gmU.uTime.value = frame.simTime;
       gmU.uSeed.value = v.seed;

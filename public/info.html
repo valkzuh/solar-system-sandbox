@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Solar System Sandbox — Physics notes</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet" />
+    <style>
+      :root { color-scheme: dark; --bg: #05070c; --text: #e6edf7; --muted: #95a3b5; --accent: #46d7c6; --accent-2: #f7b059; --border: #1a2433; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Space Grotesk', system-ui, sans-serif; line-height: 1.6; }
+      main { max-width: 860px; margin: 0 auto; padding: 48px 20px 80px; }
+      h1 { font-size: 30px; margin: 0 0 6px; }
+      h2 { font-size: 19px; margin: 40px 0 10px; color: var(--accent-2); }
+      h3 { font-size: 15px; margin: 22px 0 6px; }
+      p, li { color: #cdd6e3; }
+      .lede { color: var(--muted); font-size: 16px; }
+      code, .eq { font-family: 'IBM Plex Mono', monospace; font-size: 13px; }
+      .eq { display: block; background: #0b111b; border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; margin: 10px 0; overflow-x: auto; color: #dbe7ff; }
+      a { color: var(--accent); }
+      table { border-collapse: collapse; width: 100%; font-size: 13px; }
+      td, th { border-bottom: 1px solid var(--border); padding: 6px 8px; text-align: left; }
+      th { color: var(--muted); font-weight: 500; }
+      .back { display: inline-block; margin-bottom: 24px; text-decoration: none; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <a class="back" href="./">← Back to the sandbox</a>
+      <h1>Physics &amp; rendering notes</h1>
+      <p class="lede">What the Solar System Sandbox simulates, which approximations it makes, and where the data comes from.</p>
+
+      <h2>Units and frames</h2>
+      <p>The simulation runs in kilometres, seconds and kilograms, in the barycentric <b>ecliptic J2000</b> frame (x toward the March equinox, z toward ecliptic north). Rendering is camera-relative in double precision, with a logarithmic depth buffer, so a single frame can hold a 10 m asteroid and a star a light-year away without jitter.</p>
+
+      <h2>Initial conditions</h2>
+      <ul>
+        <li><b>Planets, Pluto, Sun:</b> VSOP87 and the Pluto model of <a href="https://github.com/cosinekitty/astronomy">astronomy-engine</a> (±1 arcminute).</li>
+        <li><b>Moon:</b> ELP/MPP02-derived lunar theory; <b>Galilean moons:</b> L1.2 theory (Lieske).</li>
+        <li><b>Other moons:</b> mean orbital elements (JPL SSD) relative to each planet’s IAU equator, with deterministic phases. Their positions are approximate, but the dynamics are fully simulated.</li>
+        <li><b>Comets and minor planets:</b> osculating heliocentric elements propagated with Kepler’s equation (elliptic and hyperbolic).</li>
+        <li><b>Orientation:</b> IAU WGCCRE 2015 pole and prime-meridian models, so Earth’s day/night terminator, the Moon’s libration and Saturn’s ring tilt match the real date.</li>
+        <li>Planet positions are shifted so that each planet plus its moons has its barycentre at the ephemeris point.</li>
+      </ul>
+
+      <h2>Gravity</h2>
+      <h3>Integrator</h3>
+      <p>A 4th-order <b>Hermite predictor–corrector</b> with <b>individual block time-steps</b> (Makino &amp; Aarseth 1992). Each body steps with its own power-of-two step chosen by the Aarseth criterion:</p>
+      <span class="eq">Δt = √( η (|a||a⁽²⁾| + |ȧ|²) / (|ȧ||a⁽³⁾| + |a⁽²⁾|²) )</span>
+      <p>The corrector is iterated (P(EC)²), which makes the scheme nearly time-symmetric (Kokubo et al. 1998) and removes secular energy drift. A heavy body’s step is also limited by the dynamical time of its lighter companions, so Earth’s wobble around the Earth–Moon barycentre is resolved. Energy is conserved to about 10⁻⁸ per simulated year for the full solar system. The <i>Physics</i> panel shows the live drift.</p>
+      <h3>Forces</h3>
+      <ul>
+        <li>Newtonian point-mass gravity between all massive bodies. Debris, comets and probes feel gravity but don’t source it.</li>
+        <li><b>J2 oblateness</b> of the Sun, Earth, Moon, Mars and the giant planets, including the reaction on the planet. This drives nodal precession of moon orbits.</li>
+        <li><b>First post-Newtonian (1PN) relativity</b> from stellar-mass sources:
+          <span class="eq">a = GM/(c²r³) · [ (4GM/r − v²) r + 4 (r·v) v ]</span>
+          This reproduces Mercury’s extra 43″/century perihelion precession. It is verified in the test-suite.</li>
+      </ul>
+      <h3>Time reversal</h3>
+      <p>Running time backwards flips all velocities. Both the Newtonian and the 1PN force used here are time-reversal symmetric, so trajectories retrace themselves.</p>
+
+      <h2>Collisions, tides and stellar evolution</h2>
+      <ul>
+        <li>Collisions conserve mass and momentum. The outcome depends on the impact energy <code>Q = ½μv²</code> relative to the binding energy <code>U = 3GM²/5R</code>. Small impacts merge, giant impacts merge and launch a debris disk (prograde, sub-escape ejecta along the impact’s angular momentum) and melt the surface, and super-catastrophic impacts shatter both bodies.</li>
+        <li>Impact heating uses a specific heat of about 1 kJ/kg/K and decays on a timescale that grows with planet mass. Hot surfaces glow with their true blackbody visible-band radiance.</li>
+        <li>Tidal disruption occurs inside the Roche limit <code>d = k R (M/m)^⅓</code>, with k = 2.44 for self-gravitating bodies and 1.26 for small rigid ones. It happens only if the body stays inside for about one dynamical time <code>1/√(Gρ)</code>, so fast impactors hit before they break up. Fragments shear along the orbit into a ring.</li>
+        <li>Stars follow main-sequence mass–luminosity and mass–radius relations. Stars of 8 M☉ or more can undergo core collapse into a neutron star or, above about 20 M☉, a black hole.</li>
+        <li>Black holes have Schwarzschild radius <code>r<sub>s</sub> = 2GM/c²</code>, shadow radius 2.6 r<sub>s</sub>, and swallow anything that crosses the horizon.</li>
+      </ul>
+
+      <h2>Temperatures &amp; habitability</h2>
+      <span class="eq">T<sub>eq</sub> = [ Σ L (1 − A) / (16 π σ d²) ]<sup>¼</sup></span>
+      <p>This is summed over all stars, plus a greenhouse offset for bodies with atmospheres. Habitable zones use Kopparapu et al. (2013).</p>
+
+      <h2>Rendering</h2>
+      <h3>Radiometry</h3>
+      <p>All shaders output radiance in one unit: <b>1.0 is a white Lambertian surface lit by the Sun at 1 AU</b>. In these units the solar disc is about 46,000, computed from Planck’s law over 400–700 nm. The inner corona is about 10⁻⁶ of that, so it only appears when the disc is hidden, as in a real total eclipse. A GPU light meter adapts the exposure the way a camera or the eye does, and AgX tone mapping and bloom produce the final image.</p>
+      <h3>Surfaces</h3>
+      <ul>
+        <li>Textured bodies are normalised to their measured geometric albedo. Airless regolith uses a Lommel–Seeliger/Lambert BRDF (flat-looking full Moon), and gas giants use Minnaert limb darkening.</li>
+        <li>Earth has ocean specular glint (GGX), clouds with shadows, and city lights that appear only on the night side, where they are 10⁴–10⁵ times fainter than daylight.</li>
+        <li>Bodies without imagery use procedural 3D-noise surfaces: craters, icy lineae, Io-like volcanism, terrestrial biomes, banded gas giants, lava worlds.</li>
+      </ul>
+      <h3>Shadows and eclipses</h3>
+      <p>Every surface point computes the fraction of each star’s disc hidden by up to six occluders, using exact circle-overlap geometry. This gives true umbrae and penumbrae: moon shadows crossing Jupiter, solar eclipses on Earth, and ring shadows on Saturn. Occluders with atmospheres pass reddened refracted light, which is why the Moon turns copper during a lunar eclipse.</p>
+      <h3>Atmospheres</h3>
+      <p>Single-scattering Rayleigh + Mie with ozone-like absorption, ray-marched per pixel (Nishita/Bruneton-style). It handles oblate planets, the night-side shadow and multiple suns. Coloured, absorbing Mie hazes give Titan its orange smog and Mars its butterscotch dust.</p>
+      <h3>Stars and sky</h3>
+      <p>The backdrop is the Tycho-2 all-sky Milky Way map plus 41,000 Hipparcos/Tycho stars to magnitude 8. Stars are drawn with Pogson magnitudes and B–V colours converted to blackbody temperature. Distant planets are point sources whose flux is computed from albedo, the Lambert-sphere phase function and inverse-square law.</p>
+      <h3>Black holes</h3>
+      <p>A screen-space point-mass lens deflects the background, <code>β = θ − θ<sub>E</sub>²/θ</code> with <code>θ<sub>E</sub> = √(2 r<sub>s</sub>/D)</code>. It shows the shadow, a photon ring and Einstein-ring distortion. This carries over from the original black-hole visualiser.</p>
+      <h3>Small bodies</h3>
+      <p>About 50,000 asteroids and Kuiper-belt objects are rendered on the GPU, with Kepler’s equation solved in the vertex shader. They include Kirkwood gaps at the 3:1, 5:2, 7:3 and 2:1 resonances with Jupiter, the Hilda triangle, the L4/L5 Trojans, and the Plutinos. Comet tails combine radiation-pressure dust (1 − β gravity) and anti-sunward ion streams whose activity scales with heliocentric distance.</p>
+
+      <h2>Data sources &amp; credits</h2>
+      <table>
+        <tr><th>What</th><th>Source</th></tr>
+        <tr><td>Ephemerides, rotation models</td><td>astronomy-engine (MIT) — VSOP87, ELP, L1.2, IAU WGCCRE</td></tr>
+        <tr><td>GM, radii, moon elements</td><td>JPL Solar System Dynamics, DE440</td></tr>
+        <tr><td>Star catalogue &amp; constellation lines</td><td>d3-celestial (BSD) — Hipparcos/Tycho via HYG</td></tr>
+        <tr><td>Milky Way sky map</td><td>Tycho-2 sky box from CesiumJS (Apache-2.0), NASA</td></tr>
+        <tr><td>Earth, Moon textures</td><td>three.js examples (NASA Blue/Black Marble derived)</td></tr>
+        <tr><td>Planet textures</td><td>Planet Pixel Emporium (J. Hastings-Trew), via threex.planets / solar-system npm packages</td></tr>
+        <tr><td>Rendering engine</td><td>three.js (MIT)</td></tr>
+      </table>
+    </main>
+  </body>
+</html>

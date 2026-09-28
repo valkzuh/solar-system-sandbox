@@ -40,6 +40,7 @@ export const LensingShader = {
     varying vec2 vUv;
 
     float viewDist(vec2 uv) {
+      if (!uUseDepth) return 1e30;
       float d = texture2D(tDepth, uv).x;
       if (d >= 1.0) return 1e30;
       return exp2(d * 2.0 / uLogDepthFC) - 1.0;

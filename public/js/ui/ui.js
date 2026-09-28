@@ -192,7 +192,7 @@ export class UI {
     g.add(orbit, arrow, ghost);
     g.visible = false;
     g.renderOrder = 10;
-    this.app.renderer.scene.add(g);
+    this.app.renderer.overlay.add(g);
     this.preview = { group: g, orbit, arrow, ghost };
     this.app.canvas.addEventListener('pointerdown', (e) => {
       if (!this.app.placing || e.button !== 0) return;
@@ -393,6 +393,7 @@ export class UI {
     bind('optBelts', (v) => (r.belts.visible = v));
     bind('optComets', (v) => (r.comets.visible = v));
     bind('optConstellations', (v) => (r.sky.showConstellations = v));
+    bind('optZones', (v) => (r.zones.enabled = v));
     bind('optAtmos', (v) => {
       r.settings.atmospheres = v;
       r.invalidateVisuals();

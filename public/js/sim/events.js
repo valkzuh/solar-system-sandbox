@@ -45,6 +45,12 @@ export function resolveCollision(sim, a, b, app) {
   const vcm = [0, 1, 2].map((k) => (big.mass * va[k] + small.mass * vb[k]) / M);
   const pcm = [0, 1, 2].map((k) => (big.mass * pa[k] + small.mass * pb[k]) / M);
   const vrel = Math.hypot(va[0] - vb[0], va[1] - vb[1], va[2] - vb[2]);
+  // Impact angular momentum axis (null for head-on collisions).
+  const dr = [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]];
+  const dv = [vb[0] - va[0], vb[1] - va[1], vb[2] - va[2]];
+  const Lh = [dr[1] * dv[2] - dr[2] * dv[1], dr[2] * dv[0] - dr[0] * dv[2], dr[0] * dv[1] - dr[1] * dv[0]];
+  const Ll = Math.hypot(...Lh);
+  const axis = Ll > 0.25 * Math.hypot(...dr) * vrel ? Lh.map((x) => x / Ll) : null;
   const mu = (big.mass * small.mass) / M;
   const ke = 0.5 * mu * vrel * vrel; // kg km^2/s^2
   const U = bindingEnergy(M, Math.cbrt(big.radius ** 3 + small.radius ** 3));
@@ -71,7 +77,7 @@ export function resolveCollision(sim, a, b, app) {
     survivor.heat = Math.max(survivor.heat, Math.min(4000, heatFrom(ke, M)));
     sim.remove(small);
     sim.setState(survivor, pcm, vcm);
-    spawnDebris(sim, survivor, debrisMass, pcm, vcm, Math.sqrt((2 * G * M) / survivor.radius) * 1.15, 120, big.name);
+    spawnDebris(sim, survivor, debrisMass, pcm, vcm, Math.sqrt((2 * G * M) / survivor.radius) * 1.15, 120, big.name, axis);
     event.outcome = 'catastrophic disruption';
   } else {
     // Merge; eject a debris fraction for energetic impacts.
@@ -80,8 +86,8 @@ export function resolveCollision(sim, a, b, app) {
     absorb(sim, big, small, pcm, vcm, ke, app, debrisMass);
     if (debrisMass > 0 && small.mass > 1e18) {
       const vesc = Math.sqrt((2 * G * big.mass) / big.radius);
-      const n = Math.round(Math.min(160, 20 + 400 * Math.min(Q, 0.35)));
-      spawnDebris(sim, big, debrisMass, pcm, vcm, vesc * 1.05, n, big.name);
+      const n = Math.round(Math.min(260, 30 + 900 * Math.min(Q, 0.25)));
+      spawnDebris(sim, big, debrisMass, pcm, vcm, vesc * 1.05, n, big.name, axis);
     }
     event.outcome = Q > 0.05 ? 'giant impact' : 'impact';
   }
@@ -118,7 +124,10 @@ function absorb(sim, big, small, pcm, vcm, ke, app, keepOutMass = 0) {
   app?.onBodyChanged?.(big);
 }
 
-export function spawnDebris(sim, parent, totalMass, center, vcm, speed, count, label) {
+// Debris launch. With `axis` (impact angular momentum direction) most ejecta is launched
+// prograde and tangentially at sub-escape speeds so it forms an orbiting disk, like the
+// proto-lunar disk after the Moon-forming impact; a minority escapes.
+export function spawnDebris(sim, parent, totalMass, center, vcm, speed, count, label, axis = null) {
   const room = Math.max(0, MAX_DEBRIS - debrisCount(sim));
   count = Math.min(count, room);
   if (count <= 0 || totalMass <= 0) return [];
@@ -128,10 +137,25 @@ export function spawnDebris(sim, parent, totalMass, center, vcm, speed, count, l
   const rho = 3000e9; // kg/km^3 (3 g/cm^3)
   const r = Math.max(0.5, Math.cbrt(m / ((4 / 3) * Math.PI * rho)));
   const R0 = parent.radius * 1.15;
+  const vesc = Math.sqrt((2 * G * parent.mass) / R0);
   for (let k = 0; k < count; k++) {
-    const dir = [gaussian(rand), gaussian(rand), gaussian(rand)];
+    let dir = [gaussian(rand), gaussian(rand), gaussian(rand)];
+    if (axis) {
+      // Concentrate toward the plane perpendicular to the impact angular momentum.
+      const d = dir[0] * axis[0] + dir[1] * axis[1] + dir[2] * axis[2];
+      dir = dir.map((x, c) => x - axis[c] * d * 0.85);
+    }
     const l = Math.hypot(...dir) || 1;
     const u = dir.map((x) => x / l);
+    let vel;
+    if (axis) {
+      // Tangential (prograde) launch at 0.72-1.05 v_esc (circular speed is 0.707 v_esc).
+      const t = [axis[1] * u[2] - axis[2] * u[1], axis[2] * u[0] - axis[0] * u[2], axis[0] * u[1] - axis[1] * u[0]];
+      const tl = Math.hypot(...t) || 1;
+      const st = vesc * (0.72 + 0.33 * Math.pow(rand(), 1.5));
+      const sr = vesc * 0.12 * rand();
+      vel = [vcm[0] + (t[0] / tl) * st + u[0] * sr, vcm[1] + (t[1] / tl) * st + u[1] * sr, vcm[2] + (t[2] / tl) * st + u[2] * sr];
+    }
     const s = speed * (0.75 + 0.6 * rand());
     const body = new Body({
       id: `debris-${++debrisSerial}`,
@@ -144,11 +168,11 @@ export function spawnDebris(sim, parent, totalMass, center, vcm, speed, count, l
       massless: true,
       showOrbit: false,
       showLabel: false,
-      heat: 1200,
+      heat: 2200, // freshly launched melt
       parent: parent.id,
       info: `Ejecta from ${label}.`,
     });
-    items.push({ body, pos: [center[0] + u[0] * R0, center[1] + u[1] * R0, center[2] + u[2] * R0], vel: [vcm[0] + u[0] * s, vcm[1] + u[1] * s, vcm[2] + u[2] * s] });
+    items.push({ body, pos: [center[0] + u[0] * R0, center[1] + u[1] * R0, center[2] + u[2] * R0], vel: vel || [vcm[0] + u[0] * s, vcm[1] + u[1] * s, vcm[2] + u[2] * s] });
   }
   sim.addMany(items);
   return items.map((i) => i.body);

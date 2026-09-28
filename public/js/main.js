@@ -225,7 +225,7 @@ class App {
     let target = phys;
     if (this.autoExposure) {
       const m = MeterPass.evaluate(this.renderer.meter.result);
-      if (m && m.mult) target = Math.min(Math.max(this.renderer.meter.result.exposure * m.mult, phys / 30), phys * 5000);
+      if (m && m.mult) target = Math.min(Math.max(this.renderer.meter.result.exposure * m.mult, phys * 1e-6), phys * 5000);
     }
     target *= Math.pow(2, this.exposureEV);
     if (this.snapExposure > 0) {

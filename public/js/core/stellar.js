@@ -141,6 +141,12 @@ function planckVisible(T) {
   return s;
 }
 const SUN_VIS = planckVisible(5772) * 2.1647e-5; // (R_sun / AU)^2 dilution
+// Visible-band surface radiance of a star (renderer units): the Sun's disc is ~46,000x a white
+// Lambertian surface lit by the Sun at 1 AU (= 1 / dilution factor).
+export function starSurfaceRadiance(tK) {
+  return (planckVisible(tK) / planckVisible(5772)) / 2.1647e-5;
+}
+
 export function thermalGlow(tK) {
   if (tK < 600) return { value: 0, color: [1, 0.3, 0.05] };
   return { value: planckVisible(tK) / SUN_VIS, color: blackbodyRGB(tK) };

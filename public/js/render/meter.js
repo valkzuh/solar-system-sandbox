@@ -86,7 +86,7 @@ export class MeterPass extends Pass {
       }
     }
     const frac = n / avg.length;
-    if (frac < 0.004) return { frac, mult: null };
+    if (frac < 0.012) return { frac, mult: null }; // subject too small to meter reliably
     subj.sort((a, b) => a - b);
     const p95 = subj[Math.floor(subj.length * 0.95)];
     const logAvg = Math.exp(logSum / n);

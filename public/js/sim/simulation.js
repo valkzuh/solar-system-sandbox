@@ -60,6 +60,8 @@ export class Simulation {
     this.isDebris = new Uint8Array(cap);
     this.rocheK = new Float64Array(cap);
     this.lastStep = new Float64Array(cap);
+    this.rocheTime = new Float64Array(cap);
+    this.tdyn = new Float64Array(cap);
     this.j2R2 = new Float64Array(cap);
     this.poleArr = new Float64Array(cap * 3);
   }
@@ -225,6 +227,10 @@ export class Simulation {
       if (b.pole) {
         this.poleArr[i * 3] = b.pole[0]; this.poleArr[i * 3 + 1] = b.pole[1]; this.poleArr[i * 3 + 2] = b.pole[2];
       }
+      // Dynamical (free-fall) time: how long tides need to pull the body apart.
+      const rhoSI = b.radius > 0 ? (b.mass / ((4 / 3) * Math.PI * b.radius ** 3)) * 1e-9 : 1;
+      this.tdyn[i] = 1 / Math.sqrt(6.674e-11 * Math.max(rhoSI, 1e-3));
+      this.rocheTime[i] = b._rocheTime || 0;
       if (!b.massless && b.mass > 0) massive.push(i);
     }
     this.massive = Int32Array.from(massive);
@@ -520,6 +526,7 @@ export class Simulation {
     for (let q = 0; q < na; q++) {
       const i = act[q];
       const i3 = i * 3;
+      let inRoche = false;
       for (let m = 0; m < nMassive; m++) {
         const k = massive[m];
         if (k === i) continue;
@@ -551,10 +558,21 @@ export class Simulation {
           const mk = gmArr[k];
           const lim = rocheK[i] * Math.cbrt(this.bodies[k].mass);
           if (r2 < lim * lim && r2 > rs * rs && mk > 0) {
-            this.pendingEvents.push({ type: 'disruption', body: this.bodies[i], by: this.bodies[k] });
-            return;
+            // Disruption takes about one dynamical time inside the Roche limit; fast
+            // impactors hit before they can be pulled apart.
+            this.rocheTime[i] += this.lastStep[i];
+            this.bodies[i]._rocheTime = this.rocheTime[i];
+            if (this.rocheTime[i] > 0.7 * this.tdyn[i]) {
+              this.pendingEvents.push({ type: 'disruption', body: this.bodies[i], by: this.bodies[k] });
+              return;
+            }
+            inRoche = true;
           }
         }
+      }
+      if (!inRoche && this.rocheTime[i] > 0) {
+        this.rocheTime[i] = 0;
+        this.bodies[i]._rocheTime = 0;
       }
     }
   }
