@@ -78,6 +78,7 @@ export class UI {
     const d = new Date();
     const pad = (n) => String(n).padStart(2, '0');
     $('scenarioDate').value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    $('tourBtn').onclick = () => this.startTour();
     for (const sc of SCENARIOS) {
       const card = document.createElement('div');
       card.className = 'card';
@@ -395,6 +396,8 @@ export class UI {
     bind('optComets', (v) => (r.comets.visible = v));
     bind('optConstellations', (v) => (r.sky.showConstellations = v));
     bind('optZones', (v) => (r.zones.enabled = v));
+    bind('optLightTime', (v) => (app.lightTime = v));
+    bind('optScaleBar', (v) => $('scalebar').classList.toggle('hidden', !v));
     bind('optAtmos', (v) => {
       r.settings.atmospheres = v;
       r.invalidateVisuals();
@@ -782,6 +785,7 @@ export class UI {
     $('tPause').textContent = app.paused ? '▶' : '⏸';
     $('tReverse').classList.toggle('active', app.warp < 0);
 
+    this._updateScaleBar();
     this.inspectTimer -= dt;
     if (this.inspectTimer <= 0) {
       this.inspectTimer = 0.25;
@@ -799,6 +803,65 @@ export class UI {
       if (e0) $('diagEnergy').textContent = sig((app.sim.totalEnergy() - e0) / Math.abs(e0), 2);
       $('diagFrame').textContent = `${app.frameMs.toFixed(1)} ms`;
     }
+  }
+
+  _updateScaleBar() {
+    const el = $('scalebar');
+    if (el.classList.contains('hidden')) return;
+    const cam = this.app.camera;
+    // Distance per CSS pixel at the depth of the orbit centre.
+    const kmPerPx = (cam.distance * 2 * Math.tan(cam.fovY / 2)) / window.innerHeight;
+    const target = kmPerPx * 110;
+    const p = Math.pow(10, Math.floor(Math.log10(target)));
+    const nice = [1, 2, 5, 10].map((k) => k * p).filter((v) => v <= target).pop() || p;
+    el.firstChild.style.width = `${(nice / kmPerPx).toFixed(0)}px`;
+    el.lastChild.textContent = fmtDistance(nice);
+  }
+
+  // ------------------------------------------------------------------ guided tour
+  startTour() {
+    const app = this.app;
+    if (app.scenarioId !== 'solar-now') app.loadScenario('solar-now');
+    const stops = [
+      ['sun', 'The <b>Sun</b>: 99.86% of the solar system’s mass. Its surface shows granulation cells the size of Texas and dark sunspots.', 3.2],
+      ['mercury', '<b>Mercury</b> is locked in a 3:2 spin–orbit resonance; its perihelion creeps forward by the 43″/century that confirmed general relativity.', 5],
+      ['venus', '<b>Venus</b>: a runaway greenhouse under featureless sulfuric-acid clouds, 464 °C at the surface.', 4],
+      ['earth', '<b>Earth</b>, positioned for the current date and time — the terminator, city lights and clouds are where they are right now.', 4.2],
+      ['moon', 'The <b>Moon</b>: tidally locked, dark basaltic maria and bright cratered highlands.', 4.2],
+      ['mars', '<b>Mars</b>: thin dusty air, Valles Marineris and the Tharsis volcanoes.', 4.2],
+      ['jupiter', '<b>Jupiter</b> and its Galilean moons in a 1:2:4 resonance. Look for moon shadows crossing the clouds.', 5],
+      ['io', '<b>Io</b>, the most volcanically active body known, heated by tidal flexing.', 4.5],
+      ['saturn', '<b>Saturn</b>: the rings cast shadows on the planet, and the planet on the rings.', 6],
+      ['titan', '<b>Titan</b>: a thick orange nitrogen haze hides lakes of liquid methane.', 4.5],
+      ['uranus', '<b>Uranus</b> rolls around the Sun tipped 98° on its side.', 5],
+      ['neptune', '<b>Neptune</b>, with supersonic winds, and its retrograde captured moon Triton.', 5],
+      ['pluto', '<b>Pluto</b> and <b>Charon</b> orbit a point in space between them.', 5],
+    ];
+    let i = 0;
+    const next = () => {
+      if (!this.touring) return;
+      if (i >= stops.length) {
+        this.touring = false;
+        this.toast('Tour complete. Everything is live: try the Create tools or a scenario.', 'info', 6000);
+        return;
+      }
+      const [id, text, radii] = stops[i++];
+      const b = app.sim.findById(id);
+      if (!b) return next();
+      app.flyTo(b, { distance: b.radius * radii * (b.rings ? 1.8 : 1) });
+      this.toast(text, 'info', 8500);
+      this.tourTimer = setTimeout(next, 9500);
+    };
+    this.touring = true;
+    this.openTab(null);
+    app.setWarp(60);
+    next();
+  }
+
+  stopTour() {
+    if (!this.touring) return;
+    this.touring = false;
+    clearTimeout(this.tourTimer);
   }
 
   // ------------------------------------------------------------------ search
@@ -883,7 +946,8 @@ export class UI {
         const tab = ['scenarios', 'create', 'view', 'physics', 'save'][parseInt(k, 10) - 1];
         this.openTab(this.activeTab === tab ? null : tab);
       } else if (k === 'Escape') {
-        if (app.placing) this.cancelPlacing();
+        if (this.touring) this.stopTour();
+        else if (app.placing) this.cancelPlacing();
         else if (!$('help').classList.contains('hidden')) $('help').classList.add('hidden');
         else if (this.activeTab) this.openTab(null);
         else app.select(null);

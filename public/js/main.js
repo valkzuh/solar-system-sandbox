@@ -42,6 +42,7 @@ class App {
     this.placing = null; // template id when placing
     this.snapExposure = 0;
     this.effects = [];
+    this.lightTime = false;
   }
 
   async start() {
@@ -295,7 +296,8 @@ class App {
     this.lastFrame = now;
     const t0 = performance.now();
 
-    // Physics
+    // Physics (always on true, geometric positions)
+    this.sim.apparent = false;
     let simDt = this.paused ? 0 : this.warp * dt;
     if (Math.abs(this.sim.time + simDt) > MAX_DATE_S) simDt = 0;
     const tBefore = this.sim.time;
@@ -333,6 +335,13 @@ class App {
     this.renderer.comets.step(this.sim, star, this.sim.time);
     this.renderer.orbits.recordTrails(this.sim.bodies, this.sim.time);
     if (this.sim.stats.energy0 === null && this.sim.n > 0) this.sim.stats.energy0 = this.sim.totalEnergy();
+
+    // Light-time correction: from here on (camera, rendering, labels, picking) bodies appear
+    // where they were when their light left them.
+    if (this.lightTime) {
+      this.sim.computeApparent(this.camera.camPos);
+      this.sim.apparent = true;
+    }
 
     // Camera
     this.camera.bodyScale = this.renderer.settings.bodyScale;

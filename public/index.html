@@ -22,6 +22,7 @@
     <canvas id="view"></canvas>
     <div id="labels"></div>
     <div id="placeHint" class="hidden"></div>
+    <div id="scalebar"><div class="bar"></div><span></span></div>
 
     <header id="topbar">
       <div class="brand"><span class="logo"></span>Solar System Sandbox</div>
@@ -49,6 +50,7 @@
         <section data-pane="scenarios">
           <p class="hint">Real initial conditions are computed for the chosen date from VSOP87/ELP theories.</p>
           <div class="row"><label>Date</label><input id="scenarioDate" type="datetime-local" step="1" /></div>
+          <div class="row"><button id="tourBtn" class="primary" title="Fly through the highlights of the solar system">▶ Guided tour</button></div>
           <div id="scenarioList" class="cards"></div>
         </section>
 
@@ -87,6 +89,8 @@
             <div class="row"><label>Constellations</label><input type="checkbox" id="optConstellations" /></div>
             <div class="row"><label title="Habitable zone of a selected star; Hill sphere and Roche limit of a selected body">Zones (HZ · Hill · Roche)</label><input type="checkbox" id="optZones" /></div>
             <div class="row"><label>Atmospheres</label><input type="checkbox" id="optAtmos" checked /></div>
+            <div class="row"><label title="Show bodies where they were when the light now reaching the camera left them (Rømer delay)">Light-time correction</label><input type="checkbox" id="optLightTime" /></div>
+            <div class="row"><label>Scale bar</label><input type="checkbox" id="optScaleBar" checked /></div>
           </div>
           <div class="group">
             <h3>Scale</h3>

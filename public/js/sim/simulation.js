@@ -73,7 +73,21 @@ export class Simulation {
   // Body management
 
   bodyPos(i) {
-    return this.rx.subarray(i * 3, i * 3 + 3);
+    const a = this.apparent && this.ax ? this.ax : this.rx;
+    return a.subarray(i * 3, i * 3 + 3);
+  }
+
+  // Light-time corrected (apparent) positions as seen from `obs`: each body is shown where it
+  // was when the light now reaching the observer left it (first order: r - v * d/c).
+  computeApparent(obs) {
+    if (!this.ax || this.ax.length < this.n * 3) this.ax = new Float64Array(this.cap * 3);
+    const d = this.dir;
+    for (let i = 0; i < this.n; i++) {
+      const i3 = i * 3;
+      const dx = this.rx[i3] - obs[0], dy = this.rx[i3 + 1] - obs[1], dz = this.rx[i3 + 2] - obs[2];
+      const lt = Math.sqrt(dx * dx + dy * dy + dz * dz) / C_KMS;
+      for (let c = 0; c < 3; c++) this.ax[i3 + c] = this.rx[i3 + c] - this.rv[i3 + c] * d * lt;
+    }
   }
 
   bodyVel(i) {
@@ -185,6 +199,7 @@ export class Simulation {
   // Bring every body to the current internal time tau (exact Hermite step of arbitrary length)
   // and restart the block clock at zero.
   sync() {
+    this.apparent = false;
     const n = this.n;
     if (!n) {
       this.tauBase = this.time;
@@ -424,6 +439,7 @@ export class Simulation {
 
   // Advance the physical clock by dtPhys seconds (sign selects direction) within a wall-clock budget.
   advance(dtPhys, budgetMs = 10) {
+    this.apparent = false;
     if (dtPhys === 0 || this.n === 0) {
       this.stats.achievedRate = 0;
       this.stats.lagging = false;

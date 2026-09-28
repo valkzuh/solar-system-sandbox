@@ -109,6 +109,25 @@ body.placing #view { cursor: crosshair; }
   transform: translate(14px, 14px);
 }
 
+#scalebar {
+  position: fixed;
+  left: 18px;
+  bottom: 26px;
+  z-index: 3;
+  pointer-events: none;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: rgba(225, 235, 250, 0.8);
+  text-shadow: 0 0 3px #000;
+}
+#scalebar .bar {
+  height: 6px;
+  border: 1px solid rgba(225, 235, 250, 0.7);
+  border-top: 0;
+  margin-bottom: 3px;
+}
+body.hide-ui #scalebar { display: none; }
+
 /* ---------------------------------------------------------------- top bar */
 #topbar {
   position: fixed;
@@ -457,6 +476,7 @@ body.hide-ui #topbar, body.hide-ui .panel, body.hide-ui #timebar, body.hide-ui #
 
 @media (max-width: 900px) {
   .brand { display: none; }
+  #scalebar { bottom: 96px; }
   #topbar { gap: 8px; left: 10px; right: 10px; top: 10px; }
   #search { width: 110px; }
   .tabs { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; min-width: 0; }

@@ -39,8 +39,8 @@ export function fmtMass(kg) {
 }
 
 export function fmtRadius(km) {
-  if (km >= 0.1 * RSUN) return `${sig(km / RSUN, 3)} R☉`;
-  if (km >= 2 * REARTH * 3) return `${sig(km / RJUP, 3)} R♃ (${sig(km, 4)} km)`;
+  if (km >= 0.5 * RSUN) return `${sig(km / RSUN, 3)} R☉`;
+  if (km >= 20000) return `${sig(km / RJUP, 3)} R♃ (${sig(km, 4)} km)`;
   if (km >= 1000) return `${sig(km, 4)} km (${sig(km / REARTH, 3)} R⊕)`;
   if (km >= 1) return `${sig(km, 3)} km`;
   return `${sig(km * 1000, 3)} m`;
