@@ -122,7 +122,8 @@ class App {
       const r = eclToRender([star.pos[0] - focus.pos[0], star.pos[1] - focus.pos[1], star.pos[2] - focus.pos[2]]);
       this.camera.azimuth = this.camera.target.azimuth = Math.atan2(r[0], r[2]) + 0.8;
     }
-    this.select(focus && !focus.isStar ? focus : null);
+    // On small screens keep the view uncluttered: don't open the inspector automatically.
+    this.select(focus && !focus.isStar && window.innerWidth > 900 ? focus : null);
     this.snapExposure = 12;
     this.ui?.refreshAll();
   }

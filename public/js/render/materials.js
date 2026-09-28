@@ -45,6 +45,8 @@ varying vec3 vNormal;
 varying vec3 vLocal;
 
 uniform mat3 uRot;          // body frame -> world (render) rotation
+uniform vec3 uCenter;       // camera-relative body centre (km)
+uniform vec3 uAxes;         // ellipsoid semi-axes (km)
 uniform int uMode;          // 0 generic, 1 earth, 2 venus-clouds
 uniform bool uHasMap;
 uniform sampler2D uMap;
@@ -345,7 +347,7 @@ Surf procSurface(vec3 p) {
 // size (depth/diameter ~ 0.2), so every octave contributes comparable slopes.
 float craterOctaves(vec3 p, float density, float f0, int n, float seedOff) {
   float h = 0.0, f = f0;
-  for (int i = 0; i < 6; i++) {
+  for (int i = 0; i < 8; i++) {
     if (i >= n) break;
     float fade = detailFade(uRadius * 2.0 / f);
     if (fade > 0.0) h += craters(p * f + uSeed * 3.1 + seedOff + float(i) * 17.0, density * (0.35 + 0.12 * float(i))) * fade * (0.5 / f);
@@ -356,7 +358,7 @@ float craterOctaves(vec3 p, float density, float f0, int n, float seedOff) {
 
 float surfHeight(vec3 p) {
   if (uProcType == 1 || uProcType == 10) {
-    float h = fbm((p * 2.0 + uSeed) * 1.5, 5) * 0.006 + craterOctaves(p, uProcA.x, 4.0, 6, 0.0);
+    float h = fbm((p * 2.0 + uSeed) * 1.5, 5) * 0.006 + craterOctaves(p, uProcA.x, 4.0, 8, 0.0);
     if (uProcC.w > 0.5) h += craters(p * 26.0 + uSeed, 0.9) * (0.4 / 26.0);
     return h;
   }
@@ -367,7 +369,7 @@ float surfHeight(vec3 p) {
 
 // Fine crater detail layered over low-resolution maps (only octaves near pixel scale).
 float detailHeight(vec3 p) {
-  return craterOctaves(p, uProcA.x * 0.7 + 0.15, 60.0, 4, 11.0);
+  return craterOctaves(p, uProcA.x * 0.7 + 0.15, 60.0, 7, 11.0);
 }
 
 vec3 perturbNormalWith(vec3 nLocal, float strength, bool detailOnly) {
@@ -403,9 +405,30 @@ vec3 bumpFromMap(vec3 nLocal, vec2 uv, sampler2D tex, float strength, int channe
 
 void main() {
   ${LOGDEPTH_FRAG}
-  vec3 nLocal = normalize(vLocal);
-  vec3 N = normalize(vNormal);
-  vec3 V = normalize(-vPos);
+  // Exact ray/ellipsoid intersection. The mesh is a slightly inflated proxy; each fragment
+  // finds the true surface point, so limbs and horizons are perfectly smooth at any range.
+  // Starting from the proxy point keeps the quadratic well conditioned at large distances.
+  vec3 rdir = normalize(vPos);
+  mat3 RT = transpose(uRot);
+  vec3 os = (RT * (vPos - uCenter)) / uAxes;
+  vec3 ds = (RT * rdir) / uAxes;
+  float qa = dot(ds, ds), qb = dot(os, ds), qc = dot(os, os) - 1.0;
+  float disc = qb * qb - qa * qc;
+  if (disc < 0.0) discard;
+  float sq = sqrt(disc);
+  float tn = (-qb - sq) / qa;
+  float tf = (-qb + sq) / qa;
+  float tcam = length(vPos);
+  float th = (tcam + tn > 0.0) ? tn : tf;
+  if (tcam + th <= 0.0) discard;
+  vec3 P = vPos + rdir * th;
+  vec3 nLocal = normalize(os + ds * th);
+  vec3 N = normalize(uRot * (nLocal / uAxes));
+  #ifdef USE_LOGARITHMIC_DEPTH_BUFFER
+    float viewZ = -(viewMatrix * vec4(P, 1.0)).z;
+    gl_FragDepth = log2(max(1.0 + viewZ, 1e-6)) * logDepthBufFC * 0.5;
+  #endif
+  vec3 V = normalize(-P);
   vec3 albedo = vec3(0.5);
   vec3 emit = vec3(0.0);
   float spec = 0.0;
@@ -481,13 +504,13 @@ void main() {
   vec3 color = vec3(0.0);
   for (int li = 0; li < MAX_LIGHTS; li++) {
     if (li >= uLightCount) break;
-    vec3 L = normalize(uLightPos[li] - vPos);
+    vec3 L = normalize(uLightPos[li] - P);
     float mu0g = dot(N, L);
     float mu0 = dot(Np, L);
     float mu = max(dot(Np, V), 0.0);
     // Self-shadowing at the geometric terminator stays smooth.
     float term = smoothstep(-0.02, 0.06, mu0g);
-    vec3 E = lightIrradiance(vPos, li) * lightVisibility(vPos, li, 0.0) * ringShadow(vPos, L) * term;
+    vec3 E = lightIrradiance(P, li) * lightVisibility(P, li, 0.0) * ringShadow(P, L) * term;
     if (uHasAtm) {
       float cz = max(mu0g, 0.0);
       float airmass = 1.0 / (cz + 0.15 * pow(max(93.885 - degrees(acos(cz)), 0.1), -1.253));
@@ -520,7 +543,7 @@ void main() {
   // Night-side emission: city lights, lava, thermal glow (not affected by sunlight).
   float night = 1.0;
   if (uLightCount > 0) {
-    vec3 L0 = normalize(uLightPos[0] - vPos);
+    vec3 L0 = normalize(uLightPos[0] - P);
     night = (1.0 - smoothstep(-0.15, 0.1, dot(N, L0)));
   }
   color += nightLights * night;
@@ -543,6 +566,8 @@ export function createPlanetMaterial() {
     ...lightingUniforms(),
     uInvScale2: { value: new THREE.Vector3(1, 1, 1) },
     uRot: { value: new THREE.Matrix3() },
+    uCenter: { value: new THREE.Vector3() },
+    uAxes: { value: new THREE.Vector3(1, 1, 1) },
     uMode: { value: 0 },
     uHasMap: { value: false },
     uMap: { value: blank },

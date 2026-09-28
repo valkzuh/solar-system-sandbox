@@ -284,7 +284,21 @@ export class Renderer {
       this._updateVisual(v, b, rp, D, visR, pxR, stars, camPos, dateObj, frame, ctx);
     }
 
-    // Comet comae as soft glows (drawn through the point renderer).
+    // Daylight: inside a sunlit atmosphere the bright sky hides the stars.
+    for (const b of bodies) {
+      if (!b.atmosphere) continue;
+      const spec = typeof b.atmosphere === 'string' ? ATMOSPHERES[b.atmosphere] : b.atmosphere;
+      const rel = [camPos[0] - b.pos[0], camPos[1] - b.pos[1], camPos[2] - b.pos[2]];
+      const d = Math.hypot(...rel);
+      const top = b.radius * this.settings.bodyScale + spec.height * this.settings.bodyScale;
+      if (d > top || !stars.length) continue;
+      const s = stars[0].body;
+      const toS = [s.pos[0] - b.pos[0], s.pos[1] - b.pos[1], s.pos[2] - b.pos[2]];
+      const cosZ = (rel[0] * toS[0] + rel[1] * toS[1] + rel[2] * toS[2]) / (d * Math.hypot(...toS));
+      const depth = Math.min(1, (spec.rayleigh[2] * spec.rayleighH + spec.mie * spec.mieH) * 3);
+      const altF = 1 - Math.min(1, (d - b.radius * this.settings.bodyScale) / (spec.height * this.settings.bodyScale));
+      glareDim = Math.max(glareDim, THREE.MathUtils.smoothstep(cosZ, -0.2, 0.05) * depth * altF);
+    }
     this.sky.update({ pixelRatio: this.pixelRatio, fovY: frame.fovY, height: heightPx, glareDim });
     this.points.end();
     this.orbits.update(bodies, camPos, ctx);
@@ -402,6 +416,13 @@ export class Renderer {
 
     const u = v.mat.uniforms;
     u.uRot.value.setFromMatrix4(R);
+    u.uCenter.value.set(rp[0], rp[1], rp[2]);
+    u.uAxes.value.set(sx, sy, sz);
+    // Inflate the proxy mesh so it encloses the true ellipsoid despite tessellation; render
+    // both faces when the camera is inside the proxy shell (very low altitude).
+    const inflate = 1.004;
+    v.mesh.matrix.copy(R.clone().multiply(new THREE.Matrix4().makeScale(sx * inflate, sy * inflate, sz * inflate)));
+    v.mat.side = D < Math.max(sx, sy, sz) * inflate * 1.01 ? THREE.DoubleSide : THREE.FrontSide;
     u.uInvScale2.value.set(1 / (sx * sx), 1 / (sy * sy), 1 / (sz * sz));
     u.uExposure.value = exposure;
     u.uTime.value = frame.simTime;

@@ -31,6 +31,7 @@ export class CameraController {
     this.minDistanceFn = () => 1e-3;
     this.bodyScale = 1;
     this.autoTilt = true;
+    this.orbitLock = false;
     this._bind();
   }
 
@@ -50,8 +51,21 @@ export class CameraController {
   minDistance() {
     if (!this.focus) return 1e-3;
     const b = this.focus;
-    const r = (b.isStar || b.kind === 'blackhole' ? b.radius : b.radius * this.bodyScale) * (b.shape ? Math.max(...b.shape) / b.radius : 1);
-    return r * 1.0008 + 0.003;
+    const k = b.isStar || b.kind === 'blackhole' ? 1 : this.bodyScale;
+    let r = b.radius * k;
+    if (b.shape) {
+      r = Math.max(...b.shape) * k;
+    } else if (b.flattening) {
+      // Surface radius of the oblate spheroid in the camera's direction.
+      const a = r / Math.cbrt(1 - b.flattening);
+      const c = a * (1 - b.flattening);
+      const d = [this.camPos[0] - b.pos[0], this.camPos[1] - b.pos[1], this.camPos[2] - b.pos[2]];
+      const dl = Math.hypot(...d) || 1;
+      const pole = b.pole || [0, 0, 1];
+      const sn = (d[0] * pole[0] + d[1] * pole[1] + d[2] * pole[2]) / dl;
+      r = (a * c) / Math.sqrt(c * c * (1 - sn * sn) + a * a * sn * sn);
+    }
+    return r * 1.00003 + 0.002;
   }
 
   // Fly to a body. `distance` defaults to a pleasant framing.
@@ -104,6 +118,26 @@ export class CameraController {
 
   update(dt) {
     const k = 1 - Math.exp(-dt * 10);
+    // "Lock to orbit": co-rotate with the focus body's motion around its primary, so the
+    // primary stays in a fixed direction (great for watching moons and tidal locking).
+    const f0 = this.focus;
+    if (this.orbitLock && f0 && f0.sim && f0.primary && f0.primary.sim) {
+      const p = f0.primary;
+      const lon = Math.atan2(f0.pos[1] - p.pos[1], f0.pos[0] - p.pos[0]);
+      if (this._lockLon !== undefined && this._lockBody === f0) {
+        let dl = lon - this._lockLon;
+        if (dl > Math.PI) dl -= 2 * Math.PI;
+        if (dl < -Math.PI) dl += 2 * Math.PI;
+        // Ecliptic longitude increases counter-clockwise seen from +z (render +Y): azimuth
+        // (measured from render +Z toward +X) turns the same way.
+        this.azimuth += dl;
+        this.target.azimuth += dl;
+      }
+      this._lockLon = lon;
+      this._lockBody = f0;
+    } else {
+      this._lockLon = undefined;
+    }
     if (this.autoRotate) this.target.azimuth += this.autoRotate * dt;
     this.azimuth += (this.target.azimuth - this.azimuth) * k;
     this.elevation += (this.target.elevation - this.elevation) * k;

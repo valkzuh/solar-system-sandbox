@@ -61,6 +61,7 @@ export class UI {
     this.activeTab = tab;
     document.querySelectorAll('#tabs button[data-tab]').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
     $('drawer').classList.toggle('hidden', !tab);
+    document.body.classList.toggle('drawer-open', !!tab);
     if (!tab) {
       if (this.app.placing) this.cancelPlacing();
       return;
@@ -558,6 +559,11 @@ export class UI {
       if (app.selected) app.selected.name = e.target.value || app.selected.name;
     };
     $('insShowOrbit').onchange = (e) => app.selected && (app.selected.showOrbit = e.target.checked);
+    $('insOrbitLock').onchange = (e) => {
+      if (!app.selected) return;
+      if (e.target.checked && app.camera.focus !== app.selected) app.flyTo(app.selected);
+      app.camera.orbitLock = e.target.checked;
+    };
     $('insShowLabel').onchange = (e) => app.selected && (app.selected.showLabel = e.target.checked);
     $('insMass').oninput = (e) => {
       const b = app.selected;
@@ -655,6 +661,7 @@ export class UI {
   }
 
   inspect(b) {
+    const app = this.app;
     const panel = $('inspector');
     if (!b || !b.sim) {
       panel.classList.add('hidden');
@@ -671,6 +678,7 @@ export class UI {
     $('insName').value = b.name;
     $('insInfo').textContent = b.info || '';
     $('insShowOrbit').checked = b.showOrbit;
+    $('insOrbitLock').checked = app.camera.orbitLock && app.camera.focus === b;
     $('insShowLabel').checked = b.showLabel;
     $('insSupernova').classList.toggle('hidden', b.kind !== 'star');
     $('insIgnite').classList.toggle('hidden', b.kind === 'star');
