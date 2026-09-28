@@ -12,12 +12,18 @@ N-body playground.
   oblateness and 1PN general relativity (Mercury precesses by 43″/century). You can run time
   forward, backward, or up to centuries per second.
 - **Sandbox physics.** Throw planets, stars, comets and black holes into the system. Collisions
-  merge, melt surfaces and eject debris disks; the Roche limit tears moons into rings; massive
-  stars can go supernova.
-- **Physically based rendering.** Rayleigh/Mie scattered atmospheres, eclipse penumbrae from every
-  moon, ring shadows, ocean glint, city lights, thermal glow of molten worlds, stellar granulation
-  and corona, GPU light metering, bloom and tone mapping, and gravitational lensing around black
-  holes.
+  conserve mass and momentum, melt surfaces and launch orbiting debris disks. The Roche limit
+  tears moons into rings. Massive stars go supernova with a Type II-P light curve, and the
+  mass loss can unbind their planets.
+- **Physically based rendering.** Everything is rendered in one radiometric unit system, from
+  the solar disc to city lights 10⁵× fainter, and a GPU light meter picks the exposure. The
+  renderer covers:
+  - ray-traced ellipsoid planets, smooth from orbit down to ground level
+  - Rayleigh/Mie scattered atmospheres with sunsets
+  - eclipse penumbrae from every moon, including a red Moon in lunar eclipses
+  - ring shadows, ocean glint, and the thermal glow of molten worlds
+  - stellar granulation and a corona that appears only during totality
+  - gravitational lensing around black holes
 
 ## Quick start
 
@@ -44,6 +50,13 @@ Environment variables: `PORT` (default 3000), `HOST` (default 127.0.0.1), `PUBLI
 | Create | **Create** panel → pick a template → click in space; drag to throw it |
 | Edit | inspector: mass/radius, circularise, boost, stop, reverse, turn into a star or black hole, supernova |
 | Toggles | `O` orbits · `L` labels · `T` trails · `C` constellations · `H` hide UI |
+| Overlays | View → Zones: habitable zone of a star, Hill sphere and Roche limit of a planet |
+| Follow | inspector → *Lock view to orbit* co-rotates the camera with a moon or planet |
+| Land | zoom all the way in: the camera tilts to the horizon and you can stand on the surface |
+
+Try real events. Open `/?scenario=solar-now&date=2024-04-08T18:17:00Z` for the Moon's umbra
+crossing North America, `…&date=2025-09-07T18:11:00Z` for a blood-red lunar eclipse, or
+`…&date=2026-09-28T13:00:00Z` for Io's shadow on Jupiter.
 
 ### Scenarios
 
@@ -83,6 +96,10 @@ relativistic perihelion advance.
 - Moons without a precise theory use mean elements, so their phases are approximate.
 - Starting velocities come from truncated VSOP87 series (about ±1′). Over years the free N-body
   solution drifts slowly away from the analytic ephemeris, as any independent integration would.
+- At extreme time warp, moons under 10⁻⁴ of their planet's mass that would make more than about
+  a quarter orbit per real second ride analytic Kepler orbits. They return to full N-body
+  integration when you slow down.
+- Debris particles feel gravity but don't exert it, which keeps thousands of fragments affordable.
 - The black-hole lens is a thin-lens point-mass approximation applied in screen space.
 
 See [`/info`](public/info.html) for the equations and data sources.

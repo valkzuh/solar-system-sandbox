@@ -175,6 +175,14 @@ export function spawnDebris(sim, parent, totalMass, center, vcm, speed, count, l
     items.push({ body, pos: [center[0] + u[0] * R0, center[1] + u[1] * R0, center[2] + u[2] * R0], vel: vel || [vcm[0] + u[0] * s, vcm[1] + u[1] * s, vcm[2] + u[2] * s] });
   }
   sim.addMany(items);
+  // Recoil: give the parent the opposite of the ejecta's net momentum (relative to the
+  // pre-launch centre-of-mass velocity) so the collision conserves momentum exactly.
+  const pm = [0, 0, 0];
+  for (const it of items) for (let c = 0; c < 3; c++) pm[c] += it.body.mass * (it.vel[c] - vcm[c]);
+  if (parent.sim) {
+    const v = parent.vel;
+    sim.setState(parent, Array.from(parent.pos), [v[0] - pm[0] / parent.mass, v[1] - pm[1] / parent.mass, v[2] - pm[2] / parent.mass]);
+  }
   return items.map((i) => i.body);
 }
 
