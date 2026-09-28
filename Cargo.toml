@@ -1,19 +1,18 @@
 [package]
-name = "black_hole_visualizer"
-version = "0.1.0"
+name = "solar_system_sandbox"
+version = "0.2.0"
 edition = "2021"
-default-run = "black_hole_visualizer"
+description = "Realistic real-time solar system sandbox: Rust web server + WebGL2 (three.js) frontend."
+license = "MIT"
+default-run = "solar_system_sandbox"
 
 [dependencies]
 anyhow = "1.0"
-bytemuck = { version = "1.14", features = ["derive"] }
-egui = "0.27"
-egui-wgpu = "0.27"
-egui-winit = "0.27"
-pollster = "0.3"
-wgpu = "0.19"
-winit = "0.29"
 axum = "0.7"
 serde = { version = "1.0", features = ["derive"] }
-tokio = { version = "1.36", features = ["macros", "rt-multi-thread"] }
-tower-http = { version = "0.5", features = ["fs"] }
+serde_json = "1.0"
+tokio = { version = "1.36", features = ["macros", "rt-multi-thread", "fs"] }
+tower-http = { version = "0.5", features = ["fs", "compression-gzip", "set-header"] }
+
+[profile.release]
+opt-level = 3

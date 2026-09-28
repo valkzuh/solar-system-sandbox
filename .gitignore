@@ -6,3 +6,5 @@ Thumbs.db
 *.log
 .env
 .env.*
+/scenarios/
+node_modules/

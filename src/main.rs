@@ -1,45 +1,26 @@
-mod physics;
+//! Solar System Sandbox web server.
+//!
+//! Serves the WebGL2 frontend from `public/` and provides a small JSON API
+//! for persisting user-created sandbox scenarios on disk.
+
+mod scenarios;
 
 use axum::{
-    extract::Query,
-    http::StatusCode,
+    extract::DefaultBodyLimit,
+    http::{header, HeaderValue},
     routing::get,
     Json, Router,
 };
-use serde::Deserialize;
-use std::{env, net::SocketAddr};
-use tower_http::services::{ServeDir, ServeFile};
+use serde_json::json;
+use std::{env, net::SocketAddr, path::PathBuf};
+use tower_http::{
+    compression::CompressionLayer,
+    services::{ServeDir, ServeFile},
+    set_header::SetResponseHeaderLayer,
+};
 
-const MASS_MIN: f64 = 1.0;
-const MASS_MAX: f64 = 1.0e10;
-
-#[derive(Deserialize)]
-struct MetricsQuery {
-    mass: Option<f64>,
-    spin: Option<f64>,
-    inclination: Option<f64>,
-    disk_sense: Option<String>,
-}
-
-fn clamp(value: f64, min_val: f64, max_val: f64) -> f64 {
-    if value < min_val {
-        min_val
-    } else if value > max_val {
-        max_val
-    } else {
-        value
-    }
-}
-
-async fn metrics_handler(Query(query): Query<MetricsQuery>) -> Result<Json<physics::Metrics>, StatusCode> {
-    let mass = clamp(query.mass.unwrap_or(10.0), MASS_MIN, MASS_MAX);
-    let spin = clamp(query.spin.unwrap_or(0.6), 0.0, 0.998);
-    let inclination = clamp(query.inclination.unwrap_or(35.0), 0.0, 80.0);
-    let disk_sense = query.disk_sense.unwrap_or_else(|| "prograde".to_string());
-    let prograde = disk_sense != "retrograde";
-
-    let metrics = physics::compute_metrics(mass, spin, inclination, prograde);
-    Ok(Json(metrics))
+async fn health() -> Json<serde_json::Value> {
+    Json(json!({ "ok": true, "name": "solar-system-sandbox", "version": env!("CARGO_PKG_VERSION") }))
 }
 
 #[tokio::main]
@@ -48,17 +29,34 @@ async fn main() -> anyhow::Result<()> {
         .ok()
         .and_then(|value| value.parse::<u16>().ok())
         .unwrap_or(3000);
+    let host: std::net::IpAddr = env::var("HOST")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or([127, 0, 0, 1].into());
+    let public_dir = PathBuf::from(env::var("PUBLIC_DIR").unwrap_or_else(|_| "public".into()));
+    let scenario_dir = PathBuf::from(env::var("SCENARIO_DIR").unwrap_or_else(|_| "scenarios".into()));
+
+    let store = scenarios::ScenarioStore::new(scenario_dir).await?;
+
+    let api = Router::new()
+        .route("/health", get(health))
+        .merge(scenarios::router(store))
+        .layer(DefaultBodyLimit::max(8 * 1024 * 1024));
 
     let app = Router::new()
-        .route("/api/metrics", get(metrics_handler))
-        .route_service("/", ServeFile::new("public/index.html"))
-        .route_service("/info", ServeFile::new("public/info.html"))
-        .fallback_service(ServeDir::new("public"));
+        .nest("/api", api)
+        .route_service("/", ServeFile::new(public_dir.join("index.html")))
+        .route_service("/info", ServeFile::new(public_dir.join("info.html")))
+        .fallback_service(ServeDir::new(&public_dir))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("no-cache"),
+        ))
+        .layer(CompressionLayer::new());
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    println!("Black Hole Visualizer listening on http://127.0.0.1:{port}");
+    let addr = SocketAddr::new(host, port);
+    println!("Solar System Sandbox listening on http://{addr}");
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
-
     Ok(())
 }

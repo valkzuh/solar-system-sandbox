@@ -1,0 +1,9 @@
+{
+  "name": "solar-system-sandbox",
+  "private": true,
+  "type": "module",
+  "description": "Physics tests for the Solar System Sandbox frontend (no runtime dependencies).",
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  }
+}
