@@ -290,6 +290,7 @@ export class BodyVisual {
         r.uSeed.value = this.seed;
       }
       r.uOpacity.value = b.rings.opacity ?? 1;
+      r.uAlbedo.value = b.rings.albedo ?? 1;
       this.ring = new THREE.Mesh(ringGeometry(), this.ringMat);
       this.ring.matrixAutoUpdate = false;
       this.ring.frustumCulled = false;

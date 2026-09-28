@@ -464,8 +464,27 @@ void main() {
     float lum = dot(night, vec3(0.299, 0.587, 0.114));
     nightLights = vec3(1.0, 0.78, 0.52) * smoothstep(0.015, 0.3, lum) * 0.01 * (1.0 - cloud * 0.85);
   } else if (uHasMap) {
+    if (uProcType == 5 || uProcType == 6) {
+      // Zonal flow turbulence: domain-warp the map along latitude bands so the coarse texture
+      // resolves into eddies and streaks when viewed up close.
+      float gf = detailFade(uRadius / 120.0);
+      if (gf > 0.0) {
+        vec3 q = vec3(nLocal.xy * 18.0, nLocal.z * 70.0) + uSeed + vec3(uTime * 2e-6, 0.0, 0.0);
+        float w1 = fbm(q, 5);
+        float w2 = fbm(q * 2.3 + 7.0, 4);
+        uv.x += (w1 * 0.006 + w2 * 0.002) * gf * uProcC.x * 2.0;
+        uv.y += (w2 * 0.0025) * gf * uProcC.x * 2.0;
+      }
+    }
     vec3 tex = sampleEq(uMap, uv).rgb;
     albedo = tex * uAlbedoScale;
+    if (uProcType == 5 || uProcType == 6) {
+      float sf = detailFade(uRadius / 600.0);
+      if (sf > 0.0) {
+        float streak = fbm(vec3(nLocal.xy * 60.0, nLocal.z * 900.0) + uSeed, 4);
+        albedo *= 1.0 + streak * 0.12 * sf;
+      }
+    }
     if (uHasBump) nPert = bumpFromMap(nLocal, uv, uBump, uBumpScale, 0);
     if (uProcType > 0 && uProcC.z > 0.5) {
       // Fine procedural detail layered on top of low-resolution maps. Dark, smooth plains
@@ -752,6 +771,7 @@ uniform float uPixelSize;
 uniform bool uProcedural;
 uniform vec3 uTint;
 uniform float uSeed;
+uniform float uAlbedo;
 
 void main() {
   ${LOGDEPTH_FRAG}
@@ -800,7 +820,7 @@ void main() {
       lit = abs(nl) * (1.0 - a) * 1.4 + 0.02;
       lit *= 1.0 + 2.0 * pow(max(phase, 0.0), 6.0);
     }
-    color += col * E * lit;
+    color += col * uAlbedo * E * lit;
   }
   gl_FragColor = vec4(color * uExposure * a, a);
 }
@@ -822,6 +842,7 @@ export function createRingMaterial() {
     uProcedural: { value: false },
     uTint: { value: new THREE.Vector3(0.8, 0.75, 0.65) },
     uSeed: { value: 1 },
+    uAlbedo: { value: 1 },
   };
   return new THREE.ShaderMaterial({
     uniforms,

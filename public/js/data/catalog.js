@@ -227,7 +227,7 @@ export const SOLAR_SYSTEM = [
     id: 'uranus', j2: 0.003510685, j2Radius: 25559, name: 'Uranus', kind: 'planet', parent: 'sun', gm: 5793951.256, radius: 25362, flattening: 0.02293,
     albedo: 0.3, geoAlbedo: 0.488, greenhouse: 0, ephem: 'astronomy', iau: 'Uranus', rotation: { iau: 'Uranus' },
     atmosphere: 'uranus',
-    rings: { inner: 38000, outer: 51500, color: T('uranusringcolour.jpg'), alpha: T('uranusringtrans.gif'), opacity: 0.55 },
+    rings: { inner: 38000, outer: 51500, color: T('uranusringcolour.jpg'), alpha: T('uranusringtrans.gif'), opacity: 0.5, albedo: 0.06 },
     appearance: { map: T('uranusmap.jpg'), proc: { type: PROC.ICE_GIANT, seed: 111, detailOnly: true, turbulence: 0.1 } },
     info: 'Ice giant tipped on its side (97.8° obliquity); each pole gets 42 years of daylight.',
   },
